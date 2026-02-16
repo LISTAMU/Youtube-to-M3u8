@@ -3,7 +3,7 @@ run-name: Generating live M3U8 playlist 🎬
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # Changed to 30 minutes to be gentler
+    - cron: '*/30 * * * *'
   workflow_dispatch:
   push:
     paths:
@@ -19,6 +19,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install tools
         run: |
@@ -45,54 +48,51 @@ jobs:
           
           # Create header
           echo "#EXTM3U" > streams.m3u8
-          echo "#EXT-X-VERSION:3" >> streams.m3u8
           echo "# Generated: $(date -u)" >> streams.m3u8
           echo "" >> streams.m3u8
           
-          ACTIVE=0
-          TOTAL=0
-          
+          # Try to get live streams, but always add URLs even if check fails
           while read line; do
             # Skip comments
             [[ "$line" =~ ^#.*$ ]] && continue
             [[ -z "$line" ]] && continue
             
-            TOTAL=$((TOTAL + 1))
-            echo ""
-            echo "Checking $TOTAL: $line"
+            URL=$(echo "$line" | grep -o 'https\?://[^ ]*' | head -1)
+            [ -z "$URL" ] && continue
             
-            # Use timeout command to prevent hanging
-            if timeout 20 yt-dlp --socket-timeout 10 --get-title "$line" 2>/dev/null; then
-              TITLE=$(timeout 20 yt-dlp --socket-timeout 10 --get-title "$line" 2>/dev/null)
-              echo "  ✅ Got title: $TITLE"
-              ACTIVE=$((ACTIVE + 1))
-              echo "" >> streams.m3u8
-              echo "#EXTINF:-1,$TITLE" >> streams.m3u8
-              echo "$line" >> streams.m3u8
-            else
-              echo "  ⚠️ Timeout or error - adding as offline"
-              # Add as offline entry
-              CHANNEL=$(echo "$line" | grep -o '@[^/]*' | tr -d '@' || echo "Channel $TOTAL")
-              echo "" >> streams.m3u8
-              echo "#EXTINF:-1,$CHANNEL (Offline - timeout)" >> streams.m3u8
-              echo "# $line" >> streams.m3u8
+            echo ""
+            echo "Processing: $URL"
+            
+            # Extract channel name for fallback
+            CHANNEL=$(echo "$URL" | grep -o '@[^/]*' | tr -d '@' || echo "Channel")
+            
+            # Try quick check with timeout
+            TITLE=""
+            if command -v timeout &> /dev/null; then
+              TITLE=$(timeout 10 yt-dlp --socket-timeout 5 --get-title "$URL" 2>/dev/null || echo "")
             fi
             
-            # Small delay between requests to be respectful
-            sleep 2
+            if [ -n "$TITLE" ]; then
+              echo "  ✅ Live: $TITLE"
+              echo "" >> streams.m3u8
+              echo "#EXTINF:-1,$TITLE" >> streams.m3u8
+              echo "$URL" >> streams.m3u8
+            else
+              echo "  ⚠️ Adding as offline (timeout/error)"
+              echo "" >> streams.m3u8
+              echo "#EXTINF:-1,$CHANNEL (Status Unknown)" >> streams.m3u8
+              echo "$URL" >> streams.m3u8
+            fi
+            
+            # Small delay
+            sleep 1
             
           done < streams.txt
           
-          # Add footer
           echo "" >> streams.m3u8
-          echo "# Active: $ACTIVE/$TOTAL" >> streams.m3u8
           echo "# Updated: $(date -u)" >> streams.m3u8
           
-          echo "active=$ACTIVE" >> $GITHUB_OUTPUT
-          echo "total=$TOTAL" >> $GITHUB_OUTPUT
-          
-          echo ""
-          echo "Summary: $ACTIVE/$TOTAL active"
+          echo "✅ Playlist generated"
 
       - name: Show playlist
         run: |
@@ -101,20 +101,23 @@ jobs:
           echo "=================="
           cat streams.m3u8
 
+      - name: Pull latest changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || echo "No changes to pull"
+
       - name: Commit and push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
           git add streams.m3u8
           
           if git diff --staged --quiet; then
-            echo "No changes"
+            echo "No changes to commit"
             exit 0
           fi
           
           git commit -m "Update M3U8 playlist"
-          git push
-          echo "Pushed updates"
+          git push origin main
+          echo "✅ Pushed updates"
