@@ -53,7 +53,26 @@ jobs:
             echo "⚠️ No cookies secret found"
             exit 1
           fi
-
+      - name: Diagnose environment
+        run: |
+          echo "🔍 Running diagnostics..."
+          echo "1. Checking Deno:"
+          which deno || echo "❌ Deno not found"
+          deno --version || echo "❌ Deno version failed"
+          
+          echo ""
+          echo "2. Checking cookies file:"
+          ls -la cookies.txt
+          echo "First 2 lines:"
+          head -2 cookies.txt
+          
+          echo ""
+          echo "3. Testing yt-dlp with cookies:"
+          yt-dlp --cookies cookies.txt --dump-json --simulate "https://www.youtube.com/@AriseNewsChannel/live" 2>&1 || echo "❌ yt-dlp test failed"
+          
+          echo ""
+          echo "4. Checking PATH:"
+          echo $PATH
       - name: Generate playlist
         run: |
           echo "#EXTM3U" > streams.m3u8
