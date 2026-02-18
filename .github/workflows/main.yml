@@ -30,7 +30,7 @@ jobs:
           echo "📦 Installing Deno..."
           curl -fsSL https://deno.land/install.sh | sh
           
-          # Add Deno to PATH for this and all subsequent steps
+          # Add Deno to PATH
           DENO_PATH="/home/runner/.deno/bin"
           echo "$DENO_PATH" >> $GITHUB_PATH
           export PATH="$DENO_PATH:$PATH"
@@ -41,21 +41,50 @@ jobs:
           echo "✅ Deno version: $(deno --version | head -1)"
           echo "✅ Deno location: $(which deno)"
 
+      - name: Diagnose secret before creating file
+        env:
+          COOKIES: ${{ secrets.COOKIES_TXT }}
+        run: |
+          echo "🔍 SECRET DIAGNOSTIC"
+          echo "===================="
+          
+          # Check if secret exists
+          if [ -n "$COOKIES" ]; then
+            echo "✅ Secret exists"
+            echo "📏 Secret length: ${#COOKIES} characters"
+            echo "📝 First 10 characters: ${COOKIES:0:10}"
+            echo "📝 Last 10 characters: ${COOKIES: -10}"
+            
+            # Check if it looks like a cookies file
+            if [[ "$COOKIES" == *".youtube.com"* ]]; then
+              echo "✅ Contains '.youtube.com' - looks like valid cookie format"
+            else
+              echo "⚠️ Does NOT contain '.youtube.com' - may be invalid format"
+            fi
+            
+            # Count lines (approximate)
+            LINE_COUNT=$(echo "$COOKIES" | wc -l)
+            echo "📊 Approximate lines: $LINE_COUNT"
+          else
+            echo "❌ Secret is empty or doesn't exist!"
+            exit 1
+          fi
+
       - name: Create cookies file
         env:
           COOKIES: ${{ secrets.COOKIES_TXT }}
         run: |
-          if [ -n "$COOKIES" ]; then
-            echo "$COOKIES" > cookies.txt
-            echo "✅ Cookies file created ($(wc -l < cookies.txt) lines)"
-            echo "First line: $(head -1 cookies.txt)"
-          else
-            echo "⚠️ No cookies secret found"
-            exit 1
-          fi
+          echo "$COOKIES" > cookies.txt
+          echo "✅ cookies.txt created"
+          echo "File size: $(wc -l < cookies.txt) lines"
+          echo "First line: $(head -1 cookies.txt)"
+          echo "Last line: $(tail -1 cookies.txt)"
+
       - name: Diagnose environment
         run: |
-          echo "🔍 Running diagnostics..."
+          echo "🔍 ENVIRONMENT DIAGNOSTIC"
+          echo "========================="
+          
           echo "1. Checking Deno:"
           which deno || echo "❌ Deno not found"
           deno --version || echo "❌ Deno version failed"
@@ -65,6 +94,8 @@ jobs:
           ls -la cookies.txt
           echo "First 2 lines:"
           head -2 cookies.txt
+          echo "Last 2 lines:"
+          tail -2 cookies.txt
           
           echo ""
           echo "3. Testing yt-dlp with cookies:"
@@ -73,6 +104,7 @@ jobs:
           echo ""
           echo "4. Checking PATH:"
           echo $PATH
+
       - name: Generate playlist
         run: |
           echo "#EXTM3U" > streams.m3u8
