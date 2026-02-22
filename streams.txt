@@ -1,14 +1,10 @@
-# YouTube Live Streams - Using Channel URLs
-# The workflow will automatically get direct stream URLs
-
-# Arise News
+# YouTube Live Streams - Nigerian News
 https://www.youtube.com/@AriseNewsChannel/live
-
-# Channels TV
 https://www.youtube.com/@channelstv/live
-
-# News Central TV
 https://www.youtube.com/@NewsCentralTV/live
-
-# Add more channels below
-# https://www.youtube.com/@TVCNewsNigeria/live
+https://www.youtube.com/@TVCNewsNigeria/live
+https://www.youtube.com/@ntanews360/live
+https://www.youtube.com/@AIT_Online/live
+https://www.youtube.com/@PlusTVAfrica/live
+https://www.youtube.com/@SoundCityTV/live
+https://www.youtube.com/@WazobiaTV/live
