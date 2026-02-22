@@ -62,6 +62,10 @@ jobs:
               sudo ip address add dev wgcf $(grep 'Address = ' wgcf-profile.conf | cut -d= -f2 | tr -d ' ')
               sudo wg setconf wgcf /etc/wireguard/wgcf.conf
               sudo ip link set up dev wgcf
+              
+              # Add routing manually
+              sudo ip route add default dev wgcf table 200 || true
+              sudo ip rule add from $(grep 'Address = ' wgcf-profile.conf | cut -d= -f2 | tr -d ' ' | cut -d/ -f1) table 200 || true
             }
             
             # Wait for connection
@@ -78,6 +82,16 @@ jobs:
               # Show current IP and ASN
               echo "🌐 Current IP: $(curl -s https://ipinfo.io/ip)"
               echo "🌐 Current ASN: $(curl -s https://ipinfo.io/org)"
+              
+              # Test routing to YouTube
+              echo "🧪 Testing routing to YouTube..."
+              YT_IP=$(curl -s --connect-timeout 10 https://www.youtube.com/robots.txt | head -1)
+              if [ -n "$YT_IP" ]; then
+                echo "✅ YouTube is reachable via WARP"
+              else
+                echo "⚠️ YouTube might be blocked, but continuing..."
+              fi
+              
               break
             fi
             
@@ -102,6 +116,8 @@ jobs:
             exit 1
           fi
           echo "$COOKIES" > cookies.txt
+          # Verify cookies format
+          head -3 cookies.txt
           echo "✅ Cookies loaded ($(wc -l < cookies.txt) lines)"
 
       - name: Generate playlist with enhanced Python script
@@ -124,7 +140,13 @@ jobs:
                   'socket_timeout': 30,
                   'extract_flat': False,
                   'source_address': '0.0.0.0',
-                  'extractor_args': {'youtube': {'skip': ['dash', 'hls']}},
+                  # Disable problematic extractors
+                  'extractor_args': {
+                      'youtube': {
+                          'player_skip': ['webpage', 'config', 'js'],
+                          'player_client': ['android', 'web'],
+                      }
+                  },
               }
               
               for attempt in range(5):
@@ -192,7 +214,7 @@ jobs:
                               return stream_urls[0]['url'], info.get('title', 'Unknown')
                           
                           # Fallback: try specific format IDs
-                          for fmt_id in ['301', '300', '94', 'best']:
+                          for fmt_id in ['301', '300', '94', '93', 'best']:
                               try:
                                   with yt_dlp.YoutubeDL({**ydl_opts, 'format': fmt_id}) as ydl2:
                                       info2 = ydl2.extract_info(f"https://youtube.com/watch?v={video_id}", download=False)
