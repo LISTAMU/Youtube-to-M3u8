@@ -1,5 +1,5 @@
 name: YouTube Live M3U8 Generator
-run-name: Generate playlist with WARP & Proxy 🎬
+run-name: Generate playlist with Cloudflare Proxy 🎬
 
 on:
   workflow_dispatch:
@@ -25,7 +25,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history for better merge handling
+          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Python & yt-dlp
@@ -135,7 +135,7 @@ jobs:
           echo "$COOKIES" > cookies.txt
           echo "✅ Cookies loaded ($(wc -l < cookies.txt) lines)"
 
-      - name: Generate playlist with Vercel Proxy
+      - name: Generate playlist with Cloudflare Worker Proxy
         run: |
           cat > generate.py << 'PYTHON_EOF'
           import yt_dlp
@@ -145,16 +145,14 @@ jobs:
           import os
           import sys
           import urllib.parse
-          import json
           from datetime import datetime, timezone
 
           # ===== CONFIGURATION =====
-          # Your Vercel proxy URL (from your deployment)
-          PROXY_BASE = "https://m3u8-proxy-ebon.vercel.app/m3u8-proxy?url="
+          # Your Cloudflare Worker proxy URL
+          PROXY_BASE = "https://siteproxy.chidex4k43342.workers.dev/yourtube/"
           
-          # Headers needed for YouTube streams
-          YOUTUBE_HEADERS = json.dumps({"referer": "https://youtube.com"})
-          ENCODED_HEADERS = urllib.parse.quote(YOUTUBE_HEADERS)
+          # IMPORTANT: The trailing slash after the password is required!
+          # Format: PROXY_BASE = "https://your-worker.workers.dev/YOUR_PASSWORD/"
           # =========================
 
           def get_stream_url(url, cookies_file):
@@ -189,7 +187,7 @@ jobs:
                               if info2 and info2.get('url'):
                                   stream_url = info2.get('url')
                                   print(f"  ✅ Got direct stream URL (method 1)")
-                      except Exception as e:
+                      except Exception:
                           pass
                       
                       # Method 2: Try format 301 (1080p)
@@ -202,7 +200,7 @@ jobs:
                                   if info3 and info3.get('url'):
                                       stream_url = info3.get('url')
                                       print(f"  ✅ Got direct stream URL (method 2 - 1080p)")
-                          except Exception as e:
+                          except Exception:
                               pass
                       
                       # Method 3: Try format 300 (720p)
@@ -215,7 +213,7 @@ jobs:
                                   if info4 and info4.get('url'):
                                       stream_url = info4.get('url')
                                       print(f"  ✅ Got direct stream URL (method 3 - 720p)")
-                          except Exception as e:
+                          except Exception:
                               pass
                       
                       # Method 4: Try best overall
@@ -228,7 +226,7 @@ jobs:
                                   if info5 and info5.get('url'):
                                       stream_url = info5.get('url')
                                       print(f"  ✅ Got direct stream URL (method 4 - best)")
-                          except Exception as e:
+                          except Exception:
                               pass
                       
                       if stream_url:
@@ -282,11 +280,30 @@ jobs:
               if stream_url:
                   active += 1
                   
-                  # Create proxied URL
-                  encoded_url = urllib.parse.quote(stream_url, safe='')
-                  proxied_url = f"{PROXY_BASE}{encoded_url}&headers={ENCODED_HEADERS}"
+                  # Get video ID from the URL
+                  video_id = None
+                  if '4uHZdlX-DT4' in stream_url:
+                      video_id = '4uHZdlX-DT4'
+                  elif 'b-Yzp0l8cAM' in stream_url:
+                      video_id = 'b-Yzp0l8cAM'
+                  elif 'd4zDorDl5UE' in stream_url:
+                      video_id = 'd4zDorDl5UE'
+                  else:
+                      # Try to extract from stream_url
+                      import re
+                      id_match = re.search(r'id/([^/]+)\.', stream_url)
+                      if id_match:
+                          video_id = id_match.group(1)
                   
-                  print(f"  ✅ SUCCESS: Got direct stream, proxied via Vercel")
+                  if video_id:
+                      # Create proxied URL using video ID
+                      proxied_url = PROXY_BASE + f"https://www.youtube.com/watch?v={video_id}"
+                      print(f"  ✅ SUCCESS: Proxied via Cloudflare Worker")
+                  else:
+                      # Fallback to direct URL
+                      proxied_url = stream_url
+                      print(f"  ⚠️ Could not extract video ID, using direct URL")
+                  
                   m3u8.extend([
                       f"#EXTINF:-1 tvg-name=\"{name}\" group-title=\"YouTube Live\",{name} (Live)",
                       proxied_url,
@@ -342,59 +359,36 @@ jobs:
           sudo wg-quick down /etc/wireguard/wgcf.conf 2>/dev/null || true
           sudo ip link del dev wgcf 2>/dev/null || true
           
-          # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Stash any local changes (just in case)
           git stash || true
-          
-          # Pull latest changes with merge strategy
-          echo "📥 Pulling latest changes..."
           git pull --no-rebase origin main || true
-          
-          # Apply stash if any
           git stash pop || true
           
-          # Add the updated playlist
           git add streams.m3u8
           
-          # Check if there are changes to commit
           if git diff --cached --quiet; then
-            echo "ℹ️ No changes to commit"
+            echo "ℹ️ No changes"
             exit 0
           fi
           
-          # Commit changes
           ACTIVE_COUNT=$(grep -c 'Live' streams.m3u8 || echo "0")
           git commit -m "🔄 Update playlist [$(date -u +%H:%M)] - ${ACTIVE_COUNT} active"
           
-          # Try to push with retry logic
-          echo "📤 Pushing changes..."
           MAX_RETRIES=3
           RETRY=0
-          
           while [ $RETRY -lt $MAX_RETRIES ]; do
             if git push origin main; then
-              echo "✅ Successfully pushed after $((RETRY + 1)) attempt(s)"
+              echo "✅ Successfully pushed"
               break
             else
               RETRY=$((RETRY + 1))
               if [ $RETRY -lt $MAX_RETRIES ]; then
-                echo "⚠️ Push failed (attempt $RETRY/$MAX_RETRIES), pulling latest and retrying..."
+                echo "⚠️ Push failed, retrying..."
                 git pull --no-rebase origin main
-              else
-                echo "❌ Failed to push after $MAX_RETRIES attempts"
-                exit 1
               fi
             fi
           done
           
-          echo "✅ Playlist updated with Vercel proxy"
-
-      - name: Final status
-        if: always()
-        run: |
-          echo ""
-          echo "🎬 Workflow completed"
-          echo "📊 Check your playlist at: https://raw.githubusercontent.com/uticap/Youtube-to-M3u8/main/streams.m3u8"
+          echo "✅ Playlist updated with Cloudflare Worker proxy"
