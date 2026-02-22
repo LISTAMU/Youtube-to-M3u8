@@ -1,6 +1,6 @@
 #EXTM3U
-# Generated: 2026-02-22 10:15:19 UTC
-# Total channels: 3
+# Generated: 2026-02-22 11:50:11 UTC
+# Total channels: 9
 
 #EXTINF:-1 tvg-name="AriseNewsChannel" group-title="YouTube Live" tvg-logo="",AriseNewsChannel (Offline/YouTube)
 https://www.youtube.com/@AriseNewsChannel/live
@@ -11,6 +11,24 @@ https://www.youtube.com/@channelstv/live
 #EXTINF:-1 tvg-name="NewsCentralTV" group-title="YouTube Live" tvg-logo="",NewsCentralTV (Offline/YouTube)
 https://www.youtube.com/@NewsCentralTV/live
 
+#EXTINF:-1 tvg-name="TVCNewsNigeria" group-title="YouTube Live" tvg-logo="",TVCNewsNigeria (Offline/YouTube)
+https://www.youtube.com/@TVCNewsNigeria/live
 
-# Summary: 0/3 direct streams active
-# Updated: 2026-02-22 10:55:09 UTC
+#EXTINF:-1 tvg-name="ntanews360" group-title="YouTube Live" tvg-logo="",ntanews360 (Offline/YouTube)
+https://www.youtube.com/@ntanews360/live
+
+#EXTINF:-1 tvg-name="AIT_Online" group-title="YouTube Live" tvg-logo="",AIT_Online (Offline/YouTube)
+https://www.youtube.com/@AIT_Online/live
+
+#EXTINF:-1 tvg-name="PlusTVAfrica" group-title="YouTube Live" tvg-logo="",PlusTVAfrica (Offline/YouTube)
+https://www.youtube.com/@PlusTVAfrica/live
+
+#EXTINF:-1 tvg-name="SoundCityTV" group-title="YouTube Live" tvg-logo="",SoundCityTV (Offline/YouTube)
+https://www.youtube.com/@SoundCityTV/live
+
+#EXTINF:-1 tvg-name="WazobiaTV" group-title="YouTube Live" tvg-logo="",WazobiaTV (Offline/YouTube)
+https://www.youtube.com/@WazobiaTV/live
+
+
+# Summary: 0/9 direct streams active
+# Updated: 2026-02-22 13:56:16 UTC
