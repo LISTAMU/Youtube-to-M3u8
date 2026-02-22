@@ -1,31 +1,16 @@
 #EXTM3U
-<<<<<<< Updated upstream
-# Generated: 2026-02-22 22:20:53 UTC
-=======
-# Generated: 2026-02-22 22:21:43 UTC
->>>>>>> Stashed changes
+# Generated: 2026-02-22 22:31:18 UTC
 # Total channels: 5
-# Proxy: https://siteproxy.chidex4k43342.workers.dev/yourtube/
 
-#EXTINF:-1 tvg-name="AriseNewsChannel" group-title="YouTube Live",AriseNewsChannel (Live)
+#EXTINF:-1 tvg-name="Channel1" group-title="YouTube Live",Channel1 (Live)
 https://siteproxy.chidex4k43342.workers.dev/yourtube/https://www.youtube.com/watch?v=4uHZdlX-DT4
-
-#EXTINF:-1 tvg-name="TVCNewsNigeria" group-title="YouTube Live",TVCNewsNigeria (Live)
+#EXTINF:-1 tvg-name="Channel2" group-title="YouTube Live",Channel2 (Live)
 https://siteproxy.chidex4k43342.workers.dev/yourtube/https://www.youtube.com/watch?v=b-Yzp0l8cAM
-
-#EXTINF:-1 tvg-name="ChannelsTelevision" group-title="YouTube Live",ChannelsTelevision (Live)
+#EXTINF:-1 tvg-name="Channel3" group-title="YouTube Live",Channel3 (Live)
 https://siteproxy.chidex4k43342.workers.dev/yourtube/https://www.youtube.com/watch?v=d4zDorDl5UE
-
-#EXTINF:-1 tvg-name="Channel 4" group-title="YouTube Live",Channel 4 (YouTube)
-https://www.youtube.com/NewsCentralAfrica/live
-
-#EXTINF:-1 tvg-name="NTALive" group-title="YouTube Live",NTALive (Live)
+#EXTINF:-1 tvg-name="Channel4" group-title="YouTube Live",Channel4 (Live)
+https://siteproxy.chidex4k43342.workers.dev/yourtube/https://www.youtube.com/watch?v=R2YPW8eY1O0
+#EXTINF:-1 tvg-name="Channel5" group-title="YouTube Live",Channel5 (Live)
 https://siteproxy.chidex4k43342.workers.dev/yourtube/https://www.youtube.com/watch?v=sSb1PdqwQ8k
-
-
-# Summary: 4/5 streams active (proxied)
-<<<<<<< Updated upstream
-# Updated: 2026-02-22 22:24:28 UTC
-=======
-# Updated: 2026-02-22 22:25:24 UTC
->>>>>>> Stashed changes
+# Summary: 5/5 streams active
+# Updated: 2026-02-22 22:32:03 UTC
