@@ -143,7 +143,7 @@ jobs:
           echo "$COOKIES" > cookies.txt
           echo "✅ Cookies loaded ($(wc -l < cookies.txt) lines)"
 
-      - name: Generate playlist with optimized Python script
+      - name: Generate playlist with enhanced get_stream_url function
         run: |
           cat > generate.py << 'PYTHON_EOF'
           import yt_dlp
@@ -154,52 +154,100 @@ jobs:
           import sys
           from datetime import datetime, timezone
 
-          def get_stream_url(url, cookies_file, attempt_num):
-              """Simplified function with better error handling"""
+          def get_stream_url(url, cookies_file):
+              """Enhanced function that actually gets the stream URL"""
               ydl_opts = {
                   'cookies': cookies_file,
                   'quiet': True,
                   'no_warnings': True,
                   'socket_timeout': 20,
-                  'extract_flat': True,  # Less resource intensive
               }
               
               try:
+                  # First, get the video ID
                   with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                       info = ydl.extract_info(url, download=False)
-                      
                       if not info:
                           return None, None
                       
-                      # Get video ID
                       video_id = info.get('id')
                       if not video_id:
                           return None, None
                       
                       print(f"  ✅ Got video ID: {video_id}")
                       
-                      # Check if live
-                      is_live = info.get('is_live', False)
-                      if not is_live:
+                      # Now get the actual stream URL
+                      stream_url = None
+                      
+                      # Method 1: Try to get best format with explicit format selection
+                      try:
+                          ydl_opts2 = ydl_opts.copy()
+                          ydl_opts2['format'] = 'best[protocol=m3u8]/best'
+                          with yt_dlp.YoutubeDL(ydl_opts2) as ydl2:
+                              info2 = ydl2.extract_info(f"https://youtube.com/watch?v={video_id}", download=False)
+                              if info2 and info2.get('url'):
+                                  stream_url = info2.get('url')
+                                  print(f"  ✅ Got direct stream URL (method 1)")
+                      except Exception as e:
+                          print(f"  ⚠️ Method 1 failed: {str(e)[:50]}")
+                          pass
+                      
+                      # Method 2: Try format 301 (1080p)
+                      if not stream_url:
+                          try:
+                              ydl_opts3 = ydl_opts.copy()
+                              ydl_opts3['format'] = '301'
+                              with yt_dlp.YoutubeDL(ydl_opts3) as ydl3:
+                                  info3 = ydl3.extract_info(f"https://youtube.com/watch?v={video_id}", download=False)
+                                  if info3 and info3.get('url'):
+                                      stream_url = info3.get('url')
+                                      print(f"  ✅ Got direct stream URL (method 2 - 1080p)")
+                          except Exception as e:
+                              print(f"  ⚠️ Method 2 failed: {str(e)[:50]}")
+                              pass
+                      
+                      # Method 3: Try format 300 (720p)
+                      if not stream_url:
+                          try:
+                              ydl_opts4 = ydl_opts.copy()
+                              ydl_opts4['format'] = '300'
+                              with yt_dlp.YoutubeDL(ydl_opts4) as ydl4:
+                                  info4 = ydl4.extract_info(f"https://youtube.com/watch?v={video_id}", download=False)
+                                  if info4 and info4.get('url'):
+                                      stream_url = info4.get('url')
+                                      print(f"  ✅ Got direct stream URL (method 3 - 720p)")
+                          except Exception as e:
+                              print(f"  ⚠️ Method 3 failed: {str(e)[:50]}")
+                              pass
+                      
+                      # Method 4: Try best format overall
+                      if not stream_url:
+                          try:
+                              ydl_opts5 = ydl_opts.copy()
+                              ydl_opts5['format'] = 'best'
+                              with yt_dlp.YoutubeDL(ydl_opts5) as ydl5:
+                                  info5 = ydl5.extract_info(f"https://youtube.com/watch?v={video_id}", download=False)
+                                  if info5 and info5.get('url'):
+                                      stream_url = info5.get('url')
+                                      print(f"  ✅ Got direct stream URL (method 4 - best)")
+                          except Exception as e:
+                              print(f"  ⚠️ Method 4 failed: {str(e)[:50]}")
+                              pass
+                      
+                      if stream_url:
+                          return stream_url, info.get('title', 'Unknown')
+                      else:
+                          print(f"  ⚠️ Could not get direct URL, using fallback")
                           return None, info.get('title', 'Unknown')
-                      
-                      # Get best format
-                      formats = info.get('formats', [])
-                      for fmt in formats:
-                          protocol = fmt.get('protocol', '')
-                          if protocol in ['m3u8', 'm3u8_native'] and fmt.get('url'):
-                              return fmt['url'], info.get('title', 'Unknown')
-                      
-                      return None, info.get('title', 'Unknown')
-                      
+                          
               except Exception as e:
-                  print(f"  ⚠️ Error: {str(e)[:100]}")
+                  print(f"  ⚠️ Error in get_stream_url: {str(e)[:100]}")
                   return None, None
 
           # Main execution
           if not os.path.exists('streams.txt'):
               print("❌ streams.txt not found")
-              sys.exit(0)  # Don't fail the workflow
+              sys.exit(0)
 
           with open('streams.txt', 'r') as f:
               lines = [l.strip() for l in f if l.strip() and not l.startswith('#')]
@@ -232,7 +280,7 @@ jobs:
               
               # Single attempt with short delay
               time.sleep(random.randint(5, 10))
-              stream_url, title = get_stream_url(url, 'cookies.txt', total)
+              stream_url, title = get_stream_url(url, 'cookies.txt')
               
               if stream_url:
                   active += 1
