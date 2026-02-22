@@ -4,7 +4,7 @@ run-name: Generate playlist with WARP 🎬
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */6 * * *'  # Run every 6 hours (safer for rate limits)
+    - cron: '0 */6 * * *'  # Run every 6 hours
   push:
     paths:
       - 'streams.txt'
@@ -29,9 +29,9 @@ jobs:
         run: |
           echo "🌐 Setting up Cloudflare WARP..."
           
-          # Install wireguard-tools
+          # Install wireguard-tools (resolvconf is optional)
           sudo apt-get update
-          sudo apt-get install -y wireguard-tools openresolv
+          sudo apt-get install -y wireguard-tools iptables
           
           # Install wgcf
           curl -fsSL https://github.com/ViRb3/wgcf/releases/download/v2.2.22/wgcf_2.2.22_linux_amd64 -o wgcf
@@ -42,17 +42,28 @@ jobs:
           wgcf register --accept-tos
           wgcf generate
           
-          # Fix WireGuard config for GitHub Actions (no IPv6)
+          # Fix WireGuard config for GitHub Actions (no IPv6, no DNS)
           sed -i 's/AllowedIPs = 0.0.0.0\/0,::\/0/AllowedIPs = 0.0.0.0\/0/' wgcf-profile.conf
           sed -i '/Address = fd/d' wgcf-profile.conf
+          sed -i '/DNS = /d' wgcf-profile.conf
           
-          # Start WireGuard
-          sudo wg-quick up ./wgcf-profile.conf
+          # Create manual up/down scripts without resolvconf
+          sudo mkdir -p /etc/wireguard
+          sudo cp wgcf-profile.conf /etc/wireguard/wgcf.conf
+          
+          # Start WireGuard manually
+          sudo wg-quick up /etc/wireguard/wgcf.conf || {
+            echo "⚠️ wg-quick failed, trying manual wg setup..."
+            sudo ip link add dev wgcf type wireguard
+            sudo ip address add dev wgcf $(grep 'Address = ' wgcf-profile.conf | cut -d= -f2 | tr -d ' ')
+            sudo wg setconf wgcf /etc/wireguard/wgcf.conf
+            sudo ip link set up dev wgcf
+          }
           
           # Verify WARP connection
           echo "🔍 Checking WARP IP..."
           sleep 5
-          curl -s https://cloudflare.com/cdn-cgi/trace | grep ip
+          curl -s https://cloudflare.com/cdn-cgi/trace | grep -E "ip|warp"
           
           echo "✅ WARP connected"
 
@@ -75,6 +86,7 @@ jobs:
           import random
           import re
           import os
+          import subprocess
           from datetime import datetime, timezone
 
           def get_stream_url(url, cookies_file):
@@ -84,7 +96,6 @@ jobs:
                   'no_warnings': True,
                   'socket_timeout': 30,
                   'extract_flat': False,
-                  # Use IPv4 only (WARP handles routing)
                   'source_address': '0.0.0.0',
               }
               
@@ -94,8 +105,8 @@ jobs:
                   time.sleep(delay)
                   
                   try:
-                      # Get video ID
-                      with yt_dlp.YoutubeDL({**ydl_opts_base, 'get_id': True}) as ydl:
+                      # Get video info
+                      with yt_dlp.YoutubeDL(ydl_opts_base) as ydl:
                           info = ydl.extract_info(url, download=False)
                           if not info:
                               print("  ⚠️ No info returned")
@@ -109,13 +120,14 @@ jobs:
                           print(f"  ✅ Got video ID: {video_id}")
                           
                           # Check if live
-                          if not info.get('is_live'):
-                              print(f"  ⚠️ Channel is not currently live")
-                              return None, None
+                          is_live = info.get('is_live') or info.get('live_status') == 'is_live'
+                          if not is_live:
+                              print(f"  ⚠️ Channel is not currently live (status: {info.get('live_status', 'unknown')})")
+                              return None, info.get('title', 'Unknown')
                           
                           time.sleep(5)
                           
-                          # Get direct stream URL
+                          # Get direct stream URL - prioritize m3u8 formats
                           format_opts = {
                               **ydl_opts_base,
                               'format': 'best[height<=1080][protocol*=m3u8]/best[protocol*=m3u8]/best',
@@ -129,7 +141,7 @@ jobs:
                               # Try formats explicitly
                               formats = info2.get('formats', []) if info2 else []
                               for fmt in formats:
-                                  if fmt.get('protocol') in ['m3u8', 'm3u8_native']:
+                                  if fmt.get('protocol') in ['m3u8', 'm3u8_native', 'http_dash_segments']:
                                       return fmt['url'], info2.get('title', 'Unknown')
                               
                   except Exception as e:
@@ -137,14 +149,14 @@ jobs:
                       print(f"  ❌ Error: {error_str[:150]}")
                       
                       if 'rate' in error_str.lower() or '429' in error_str:
-                          print("  ⚠️ Rate limited - increasing delay")
-                      elif 'bot' in error_str.lower():
-                          print("  ⚠️ Bot detection triggered - WARP may not be routing properly")
-                          # Check IP
+                          print("  ⚠️ Rate limited")
+                      elif 'bot' in error_str.lower() or 'sign in' in error_str.lower():
+                          print("  ⚠️ Bot detection triggered!")
+                          # Check current IP
                           try:
-                              import urllib.request
-                              with urllib.request.urlopen('https://cloudflare.com/cdn-cgi/trace', timeout=10) as resp:
-                                  print(f"  🔍 Current IP info: {resp.read().decode()[:200]}")
+                              result = subprocess.run(['curl', '-s', 'https://cloudflare.com/cdn-cgi/trace'], 
+                                                    capture_output=True, text=True, timeout=10)
+                              print(f"  🔍 IP Info: {result.stdout[:200]}")
                           except:
                               pass
               
@@ -242,7 +254,10 @@ jobs:
         run: |
           # Cleanup sensitive files
           rm -f cookies.txt generate.py wgcf-profile.conf wgcf-account.toml
-          sudo wg-quick down wgcf-profile.conf 2>/dev/null || true
+          
+          # Stop WireGuard
+          sudo wg-quick down /etc/wireguard/wgcf.conf 2>/dev/null || true
+          sudo ip link del dev wgcf 2>/dev/null || true
           
           # Git config
           git config user.name "github-actions[bot]"
