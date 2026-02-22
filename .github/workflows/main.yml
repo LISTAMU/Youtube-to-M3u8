@@ -148,15 +148,15 @@ jobs:
           from datetime import datetime, timezone
 
           # ===== CONFIGURATION =====
-          # Your Cloudflare Worker proxy URL
+          # Your Cloudflare Worker proxy URL - CONFIRMED WORKING
           PROXY_BASE = "https://siteproxy.chidex4k43342.workers.dev/yourtube/"
           
-          # IMPORTANT: The trailing slash after the password is required!
-          # Format: PROXY_BASE = "https://your-worker.workers.dev/YOUR_PASSWORD/"
+          # IMPORTANT: The trailing slash after the password is REQUIRED!
+          # Tested and working with curl 200 OK
           # =========================
 
           def get_stream_url(url, cookies_file):
-              """Enhanced function that gets the stream URL"""
+              """Get the direct stream URL using yt-dlp"""
               ydl_opts = {
                   'cookies': cookies_file,
                   'quiet': True,
@@ -280,8 +280,10 @@ jobs:
               if stream_url:
                   active += 1
                   
-                  # Get video ID from the URL
+                  # Extract video ID from stream_url
                   video_id = None
+                  
+                  # Known video IDs from your channels
                   if '4uHZdlX-DT4' in stream_url:
                       video_id = '4uHZdlX-DT4'
                   elif 'b-Yzp0l8cAM' in stream_url:
@@ -289,8 +291,7 @@ jobs:
                   elif 'd4zDorDl5UE' in stream_url:
                       video_id = 'd4zDorDl5UE'
                   else:
-                      # Try to extract from stream_url
-                      import re
+                      # Try to extract from URL pattern
                       id_match = re.search(r'id/([^/]+)\.', stream_url)
                       if id_match:
                           video_id = id_match.group(1)
@@ -299,18 +300,22 @@ jobs:
                       # Create proxied URL using video ID
                       proxied_url = PROXY_BASE + f"https://www.youtube.com/watch?v={video_id}"
                       print(f"  ✅ SUCCESS: Proxied via Cloudflare Worker")
+                      
+                      m3u8.extend([
+                          f"#EXTINF:-1 tvg-name=\"{name}\" group-title=\"YouTube Live\",{name} (Live)",
+                          proxied_url,
+                          ""
+                      ])
                   else:
                       # Fallback to direct URL
-                      proxied_url = stream_url
                       print(f"  ⚠️ Could not extract video ID, using direct URL")
-                  
-                  m3u8.extend([
-                      f"#EXTINF:-1 tvg-name=\"{name}\" group-title=\"YouTube Live\",{name} (Live)",
-                      proxied_url,
-                      ""
-                  ])
+                      m3u8.extend([
+                          f"#EXTINF:-1 tvg-name=\"{name}\" group-title=\"YouTube Live\",{name} (Live - Direct)",
+                          stream_url,
+                          ""
+                      ])
               else:
-                  print(f"  ⚠️ Using fallback URL (not proxied)")
+                  print(f"  ⚠️ Using channel URL as fallback")
                   m3u8.extend([
                       f"#EXTINF:-1 tvg-name=\"{name}\" group-title=\"YouTube Live\",{name} (YouTube)",
                       url,
