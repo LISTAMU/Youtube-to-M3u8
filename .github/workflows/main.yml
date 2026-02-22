@@ -320,15 +320,7 @@ jobs:
 
           python generate.py
 
-      - name: Show playlist preview
-        run: |
-          echo ""
-          echo "📄 Generated streams.m3u8:"
-          echo "=========================="
-          head -20 streams.m3u8
-          echo "..."
-
-      - name: Cleanup & Commit
+            - name: Cleanup & Commit
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -342,15 +334,27 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
+          # First, pull latest changes with merge strategy
+          git pull --no-rebase origin main || true
+          
+          # Add the updated playlist
           git add streams.m3u8
           
+          # Check if there are changes to commit
           if git diff --cached --quiet; then
             echo "ℹ️ No changes"
             exit 0
           fi
           
+          # Commit changes
           ACTIVE_COUNT=$(grep -c 'Live' streams.m3u8 || echo "0")
           git commit -m "🔄 Update playlist [$(date -u +%H:%M)] - ${ACTIVE_COUNT} active"
-          git pull --rebase origin main || true
-          git push origin main
+          
+          # Try to push, but if it fails, pull and retry once
+          if ! git push origin main; then
+            echo "⚠️ Push failed, pulling latest changes and retrying..."
+            git pull --no-rebase origin main
+            git push origin main
+          fi
+          
           echo "✅ Playlist updated with Vercel proxy"
