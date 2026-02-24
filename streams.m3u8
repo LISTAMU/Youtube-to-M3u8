@@ -1,9 +1,36 @@
 #EXTM3U
 #EXT-X-VERSION:3
-# Generated: 2026-02-24 10:02:56 UTC
+# Generated: 2026-02-24 10:21:39 UTC
 # Total channels: 8
 # Playlist optimized for Streamlink (pip install streamlink)
 
+#EXTINF:-1 tvg-name="AriseNewsChannel" group-title="Nigeria News",AriseNewsChannel [Error]
+https://www.youtube.com/@AriseNewsChannel/live
+
+#EXTINF:-1 tvg-name="TVCNewsNigeria" group-title="Nigeria News",TVCNewsNigeria [Error]
+https://www.youtube.com/@TVCNewsNigeria/live
+
+#EXTINF:-1 tvg-name="ChannelsTelevision" group-title="Nigeria News",ChannelsTelevision [Error]
+https://www.youtube.com/@ChannelsTelevision/live
+
+#EXTINF:-1 tvg-name="NewsCentralAfrica" group-title="Nigeria News",NewsCentralAfrica [Error]
+https://www.youtube.com/@NewsCentralAfrica/live
+
+#EXTINF:-1 tvg-name="NTALive" group-title="Nigeria News",NTALive [Error]
+https://www.youtube.com/@NTALive/live
+
+#EXTINF:-1 tvg-name="SilverbirdN24Live" group-title="Nigeria News",SilverbirdN24Live [Error]
+https://www.youtube.com/@SilverbirdN24Live/live
+
+#EXTINF:-1 tvg-name="AITLivestream1" group-title="Nigeria News",AITLivestream1 [Error]
+https://www.youtube.com/@AITLivestream1/live
+
+#EXTINF:-1 tvg-name="VOP903FM" group-title="Nigeria News",VOP903FM [Error]
+https://www.youtube.com/@VOP903FM/live
+
 
 # Summary: 0/8 streams active
-# Updated: 2026-02-24 10:03:35 UTC
+# Active: None
+# Offline: 0
+# Errors: 8
+# Updated: 2026-02-24 10:22:28 UTC

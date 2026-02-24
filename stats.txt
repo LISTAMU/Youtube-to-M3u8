@@ -2,3 +2,4 @@ active=0
 total=8
 active_channels=
 offline_channels=
+error_channels=AriseNewsChannel,TVCNewsNigeria,ChannelsTelevision,NewsCentralAfrica,NTALive,SilverbirdN24Live,AITLivestream1,VOP903FM
