@@ -1,10 +1,10 @@
 name: YouTube Live M3U8 Generator
-run-name: Generate HD Playlist with Smart Quality Selection 🎬
+run-name: Generate HD Playlist 🎬
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */6 * * *'  # Refresh every 6 hours
+    - cron: '0 */6 * * *'
   push:
     paths:
       - 'streams.txt'
@@ -12,11 +12,6 @@ on:
 
 permissions:
   contents: write
-
-# Prevent concurrent runs
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
 
 env:
   PYTHONUNBUFFERED: "1"
@@ -31,43 +26,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.WORKFLOW_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Python & yt-dlp
         run: |
-          pip install --upgrade pip yt-dlp requests
+          pip install --upgrade pip yt-dlp
           echo "✅ yt-dlp: $(yt-dlp --version)"
 
-      - name: Setup Cloudflare WARP
-        continue-on-error: true
-        run: |
-          echo "🌐 Setting up Cloudflare WARP..."
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq wireguard-tools iptables
-          curl -fsSL https://github.com/ViRb3/wgcf/releases/download/v2.2.22/wgcf_2.2.22_linux_amd64 -o wgcf
-          chmod +x wgcf
-          sudo mv wgcf /usr/local/bin/
-          wgcf register --accept-tos
-          wgcf generate
-          sudo mkdir -p /etc/wireguard
-          sudo cp wgcf-profile.conf /etc/wireguard/wgcf.conf
-          sudo wg-quick up /etc/wireguard/wgcf.conf || true
-          echo "✅ WARP setup complete"
-
-      - name: Create cookies file securely
+      - name: Create cookies file
         env:
           COOKIES: ${{ secrets.COOKIES_TXT }}
         run: |
           if [ -z "$COOKIES" ]; then
-            echo "❌ COOKIES_TXT secret is required"
-            exit 1
+            echo "⚠️ No cookies found - continuing without authentication"
+            touch cookies.txt
+          else
+            echo "$COOKIES" > cookies.txt
+            echo "✅ Cookies loaded ($(wc -l < cookies.txt) lines)"
           fi
-          install -m 600 /dev/null cookies.txt
-          echo "$COOKIES" > cookies.txt
-          echo "::add-mask::$(echo "$COOKIES" | head -1 | cut -f7)"
-          echo "✅ Cookies loaded ($(wc -l < cookies.txt) lines)"
 
-      - name: Generate HD playlist with smart quality selection
+      - name: Generate playlist
         id: generate
         run: |
           cat > generate.py << 'PYTHON_EOF'
@@ -79,10 +57,10 @@ jobs:
           import sys
           from datetime import datetime, timezone, timedelta
 
-          def get_stream_info(url, cookies_file):
-              """Get video ID and quality info using yt-dlp."""
+          def get_video_info(url, cookies_file):
+              """Get video ID and info."""
               ydl_opts = {
-                  'cookies': cookies_file,
+                  'cookies': cookies_file if os.path.exists(cookies_file) and os.path.getsize(cookies_file) > 0 else None,
                   'quiet': True,
                   'no_warnings': True,
                   'socket_timeout': 30,
@@ -91,73 +69,63 @@ jobs:
               
               try:
                   with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                      # Extract video info - this gets the actual video ID
                       info = ydl.extract_info(url, download=False)
                       
                       if not info:
-                          print(f"  ⚠️ No info returned")
-                          return None, None, None
+                          return None
                       
-                      # Get video ID - this is the crucial part
                       video_id = info.get('id')
                       if not video_id:
-                          print(f"  ⚠️ No video ID found")
-                          return None, None, None
-                      
-                      print(f"  ✅ Got video ID: {video_id}")
+                          return None
                       
                       # Check if live
                       is_live = info.get('is_live', False)
                       live_status = info.get('live_status', '')
                       
-                      # If not live, still return video_id for fallback
-                      if not (is_live or live_status == 'is_live'):
-                          print(f"  ⚠️ Not currently live (status: {live_status})")
-                          return video_id, "offline", info.get('title', 'Unknown')
-
-                      # Get quality info from formats
-                      formats = info.get('formats', [])
-                      video_formats = [f for f in formats if f.get('height') and f.get('vcodec') != 'none']
+                      result = {
+                          'video_id': video_id,
+                          'title': info.get('title', 'Unknown'),
+                          'channel': info.get('channel', 'Unknown'),
+                          'is_live': is_live or live_status == 'is_live'
+                      }
                       
-                      if video_formats:
-                          # Sort by height
-                          video_formats.sort(key=lambda f: f.get('height', 0), reverse=True)
-                          best_format = video_formats[0]
-                          height = best_format.get('height', 0)
+                      # Get quality if live
+                      if result['is_live']:
+                          formats = info.get('formats', [])
+                          video_formats = [f for f in formats if f.get('height')]
                           
-                          # Determine quality tag
-                          if height >= 1080:
-                              quality = "1080p"
-                          elif height >= 720:
-                              quality = "720p"
-                          elif height >= 480:
-                              quality = "480p"
+                          if video_formats:
+                              video_formats.sort(key=lambda f: f.get('height', 0), reverse=True)
+                              height = video_formats[0].get('height', 0)
+                              
+                              if height >= 1080:
+                                  result['quality'] = '1080p'
+                              elif height >= 720:
+                                  result['quality'] = '720p'
+                              elif height >= 480:
+                                  result['quality'] = '480p'
+                              else:
+                                  result['quality'] = f'{height}p'
+                              
+                              fps = video_formats[0].get('fps', '')
+                              if fps and fps > 30:
+                                  result['quality'] += f'{int(fps)}'
                           else:
-                              quality = f"{height}p"
-                          
-                          fps = best_format.get('fps', '')
-                          if fps and fps > 30:
-                              quality += f"{int(fps)}"
+                              result['quality'] = 'unknown'
                       else:
-                          quality = "unknown"
+                          result['quality'] = 'offline'
                       
-                      return video_id, quality, info.get('title', 'Unknown')
+                      return result
                           
-              except yt_dlp.utils.DownloadError as e:
-                  print(f"  ⚠️ Download error: {str(e)[:150]}")
-                  # Try to get video ID from error message as fallback
-                  import re
-                  id_match = re.search(r'([a-zA-Z0-9_-]{11})', str(e))
-                  if id_match:
-                      return id_match.group(1), "unknown", None
-                  return None, None, None
               except Exception as e:
-                  print(f"  ⚠️ Error: {str(e)[:150]}")
-                  return None, None, None
+                  print(f"  ⚠️ Error: {str(e)[:100]}")
+                  return None
 
           # Read streams.txt
           if not os.path.exists('streams.txt'):
               print("❌ streams.txt not found")
+              with open('streams.m3u8', 'w') as f:
+                  f.write("#EXTM3U\n# ERROR: streams.txt not found\n")
               sys.exit(0)
 
           with open('streams.txt', 'r') as f:
@@ -165,70 +133,56 @@ jobs:
 
           if not lines:
               print("⚠️ No streams found")
+              with open('streams.m3u8', 'w') as f:
+                  f.write("#EXTM3U\n# No streams configured\n")
               sys.exit(0)
 
-          # M3U8 Header with GitHub Pages info
+          # Create playlist
           m3u8 = [
               "#EXTM3U",
               "#EXT-X-VERSION:3",
               f"# Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
-              f"# Refresh: Every 6 hours via GitHub Actions",
-              f"# GitHub Pages: https://uticap.github.io/Youtube-to-M3u8/streams.m3u8",
               f"# Total channels: {len(lines)}",
-              "# NOTE: Use with Streamlink: streamlink --player=vlc THIS_URL best",
+              "# Use with Streamlink: streamlink --player=vlc THIS_URL best",
               ""
           ]
 
           active = 0
-          quality_stats = {"1080p": 0, "720p": 0, "480p": 0, "other": 0}
           active_channels = []
           offline_channels = []
           error_channels = []
 
           for i, line in enumerate(lines, 1):
               print(f"\n📺 [{i}/{len(lines)}] Processing: {line}")
-              time.sleep(random.uniform(3, 8))
+              time.sleep(random.uniform(2, 5))
               
               # Extract channel name
               name_match = re.search(r'@([^/]+)', line)
               channel_name = name_match.group(1) if name_match else f"Channel{i}"
               channel_name = re.sub(r'[^\w\s-]', '', channel_name).strip()
               
-              # Get video info
-              video_id, quality, title = get_stream_info(line, 'cookies.txt')
+              info = get_video_info(line, 'cookies.txt')
               
-              if video_id:
-                  # Create YouTube watch URL
-                  youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+              if info and info.get('video_id'):
+                  youtube_url = f"https://www.youtube.com/watch?v={info['video_id']}"
                   
-                  if quality != "offline" and quality != "unknown":
+                  if info.get('is_live'):
                       active += 1
                       active_channels.append(channel_name)
-                      
-                      # Track quality stats
-                      if "1080p" in quality:
-                          quality_stats["1080p"] += 1
-                      elif "720p" in quality:
-                          quality_stats["720p"] += 1
-                      elif "480p" in quality:
-                          quality_stats["480p"] += 1
-                      else:
-                          quality_stats["other"] += 1
-                      
+                      quality = info.get('quality', 'unknown')
                       print(f"  ✅ LIVE: {channel_name} [{quality}]")
-                      m3u8.append(f'#EXTINF:-1 tvg-id="{video_id}" tvg-name="{channel_name}" group-title="Nigeria News",{channel_name} [{quality}]')
+                      m3u8.append(f'#EXTINF:-1 tvg-id="{info["video_id"]}" tvg-name="{channel_name}" group-title="News",{channel_name} [{quality}]')
                       m3u8.append(youtube_url)
-                      m3u8.append("")
                   else:
-                      print(f"  ⚠️ OFFLINE: {channel_name}")
                       offline_channels.append(channel_name)
-                      m3u8.append(f'#EXTINF:-1 tvg-id="{video_id}" tvg-name="{channel_name}" group-title="Nigeria News",{channel_name} [Offline]')
-                      m3u8.append(youtube_url)  # Still add URL for Streamlink
-                      m3u8.append("")
+                      print(f"  ⚠️ OFFLINE: {channel_name}")
+                      m3u8.append(f'#EXTINF:-1 tvg-id="{info["video_id"]}" tvg-name="{channel_name}" group-title="News",{channel_name} [Offline]')
+                      m3u8.append(youtube_url)
+                  m3u8.append("")
               else:
-                  print(f"  ❌ ERROR: {channel_name}")
                   error_channels.append(channel_name)
-                  m3u8.append(f'#EXTINF:-1 tvg-name="{channel_name}" group-title="Nigeria News",{channel_name} [Error]')
+                  print(f"  ❌ ERROR: {channel_name}")
+                  m3u8.append(f'#EXTINF:-1 tvg-name="{channel_name}" group-title="News",{channel_name} [Error]')
                   m3u8.append(line)
                   m3u8.append("")
 
@@ -237,15 +191,14 @@ jobs:
           m3u8.extend([
               "",
               f"# Summary: {active}/{len(lines)} streams active",
-              f"# Quality: {quality_stats['1080p']}x1080p, {quality_stats['720p']}x720p, {quality_stats['480p']}x480p",
+              f"# Active: {', '.join(active_channels) if active_channels else 'None'}",
               f"# Offline: {len(offline_channels)}",
               f"# Errors: {len(error_channels)}",
-              f"# Active channels: {', '.join(active_channels) if active_channels else 'None'}",
-              f"# Next refresh: {next_refresh.strftime('%Y-%m-%d %H:%M UTC')}",
+              f"# Next refresh: {next_refresh.strftime('%Y-%m-%d %H:%M:%S UTC')}",
               f"# Updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
           ])
 
-          # Write M3U8
+          # Write playlist
           with open('streams.m3u8', 'w', encoding='utf-8') as f:
               f.write('\n'.join(m3u8))
 
@@ -253,319 +206,100 @@ jobs:
           with open('stats.txt', 'w') as f:
               f.write(f"active={active}\n")
               f.write(f"total={len(lines)}\n")
-              f.write(f"quality_1080p={quality_stats['1080p']}\n")
-              f.write(f"quality_720p={quality_stats['720p']}\n")
-              f.write(f"quality_480p={quality_stats['480p']}\n")
               f.write(f"active_channels={','.join(active_channels)}\n")
               f.write(f"offline_channels={','.join(offline_channels)}\n")
               f.write(f"error_channels={','.join(error_channels)}\n")
 
           print(f"\n{'='*50}")
           print(f"📊 FINAL: {active}/{len(lines)} streams active")
-          print(f"📊 Quality: 1080p:{quality_stats['1080p']} 720p:{quality_stats['720p']} 480p:{quality_stats['480p']}")
-          print(f"⏰ Next refresh: {next_refresh.strftime('%H:%M UTC')}")
-          print(f"📁 GitHub Pages: https://uticap.github.io/Youtube-to-M3u8/streams.m3u8")
           print(f"{'='*50}")
 
           PYTHON_EOF
 
           python generate.py
 
-      - name: Load stats
-        id: stats
+      - name: Verify playlist
         run: |
-          source stats.txt
-          echo "active=$active" >> $GITHUB_OUTPUT
-          echo "total=$total" >> $GITHUB_OUTPUT
-          echo "quality_1080p=$quality_1080p" >> $GITHUB_OUTPUT
-          echo "quality_720p=$quality_720p" >> $GITHUB_OUTPUT
-          echo "quality_480p=$quality_480p" >> $GITHUB_OUTPUT
-          echo "active_channels=$active_channels" >> $GITHUB_OUTPUT
-          echo "offline_channels=$offline_channels" >> $GITHUB_OUTPUT
-          echo "error_channels=$error_channels" >> $GITHUB_OUTPUT
+          echo "🔍 Verifying playlist..."
+          if [ ! -f "streams.m3u8" ]; then
+            echo "❌ streams.m3u8 not created!"
+            exit 1
+          fi
+          
+          echo "✅ streams.m3u8 exists ($(wc -l < streams.m3u8) lines)"
+          echo ""
+          echo "📄 First 10 lines:"
+          head -10 streams.m3u8
+          
+          # Check if we have any active streams
+          if grep -q "Live" streams.m3u8; then
+            echo "✅ Found live streams in playlist"
+          else
+            echo "⚠️ No live streams found - this may be normal if all channels are offline"
+          fi
 
-      - name: Prepare for GitHub Pages
+      - name: Prepare GitHub Pages
         run: |
-          # Create .nojekyll to disable Jekyll processing
+          # Create .nojekyll
           touch .nojekyll
           
-          # Create _config.yml for proper MIME types
-          cat > _config.yml << 'EOF'
-          include:
-            - "*.m3u8"
-            - "*.txt"
-          mime_types:
-            m3u8: application/vnd.apple.mpegurl
-          EOF
-          
-          # Create HTML interface
-          cat > index.html << 'HTML_EOF'
+          # Create simple index.html
+          cat > index.html << 'EOF'
           <!DOCTYPE html>
-          <html lang="en">
+          <html>
           <head>
+              <title>Live News Streams</title>
               <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>🇳🇬 Nigeria News Streams</title>
+              <meta name="viewport" content="width=device-width, initial-scale=1">
               <style>
-                  * { margin: 0; padding: 0; box-sizing: border-box; }
-                  body {
-                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                      min-height: 100vh;
-                      padding: 20px;
-                  }
-                  .container {
-                      max-width: 1000px;
-                      margin: 0 auto;
-                      background: white;
-                      border-radius: 20px;
-                      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                      overflow: hidden;
-                  }
-                  .header {
-                      background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-                      color: white;
-                      padding: 40px;
-                      text-align: center;
-                  }
-                  .header h1 { font-size: 2.5em; margin-bottom: 10px; }
-                  .header p { font-size: 1.2em; opacity: 0.95; }
-                  .content { padding: 40px; }
-                  .stats-grid {
-                      display: grid;
-                      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                      gap: 20px;
-                      margin-bottom: 30px;
-                  }
-                  .stat-card {
-                      background: #f8f9fa;
-                      padding: 25px;
-                      border-radius: 12px;
-                      text-align: center;
-                      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                  }
-                  .stat-value {
-                      font-size: 2.5em;
-                      font-weight: bold;
-                      color: #4CAF50;
-                      margin-bottom: 5px;
-                  }
-                  .stat-label { color: #666; font-size: 0.9em; text-transform: uppercase; }
-                  .url-box {
-                      background: white;
-                      padding: 15px;
-                      border-radius: 8px;
-                      border: 2px solid #e0e0e0;
-                      display: flex;
-                      justify-content: space-between;
-                      align-items: center;
-                      margin-bottom: 15px;
-                  }
-                  .url-box code { word-break: break-all; color: #333; }
-                  .btn {
-                      background: #4CAF50;
-                      color: white;
-                      padding: 12px 24px;
-                      border-radius: 6px;
-                      text-decoration: none;
-                      display: inline-flex;
-                      align-items: center;
-                      gap: 8px;
-                      border: none;
-                      cursor: pointer;
-                  }
-                  .btn:hover { background: #45a049; }
-                  .channels-grid {
-                      display: grid;
-                      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-                      gap: 15px;
-                      margin-top: 20px;
-                  }
-                  .channel-card {
-                      background: white;
-                      padding: 15px;
-                      border-radius: 8px;
-                      border-left: 4px solid #4CAF50;
-                      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                  }
-                  .channel-name { font-weight: bold; color: #333; }
-                  .footer {
-                      background: #f8f9fa;
-                      padding: 30px;
-                      text-align: center;
-                      color: #666;
-                      border-top: 1px solid #e0e0e0;
-                  }
+                  body { font-family: Arial; padding: 20px; background: #f0f0f0; }
+                  .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
+                  h1 { color: #333; }
+                  .btn { background: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; display: inline-block; margin: 10px 0; border-radius: 5px; }
+                  pre { background: #f5f5f5; padding: 10px; border-radius: 5px; overflow-x: auto; }
               </style>
           </head>
           <body>
               <div class="container">
-                  <div class="header">
-                      <h1>🇳🇬 Nigeria News Streams</h1>
-                      <p>Live YouTube streams • Updated every 6 hours</p>
-                  </div>
-                  <div class="content">
-                      <div class="stats-grid" id="stats-container">
-                          <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Active</div></div>
-                          <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Total</div></div>
-                          <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">1080p</div></div>
-                          <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">720p</div></div>
-                      </div>
-                      <div class="playlist-section">
-                          <h2>📋 M3U8 Playlist</h2>
-                          <div class="url-box">
-                              <code id="playlist-url">https://uticap.github.io/Youtube-to-M3u8/streams.m3u8</code>
-                              <button class="btn" onclick="copyUrl()">📋 Copy</button>
-                          </div>
-                          <a href="streams.m3u8" class="btn">▶️ Open Playlist</a>
-                      </div>
-                      <div class="playlist-section">
-                          <h2>📡 Live Channels</h2>
-                          <div class="channels-grid" id="live-channels"></div>
-                          <h2 style="margin-top: 30px;">⚫ Offline</h2>
-                          <div class="channels-grid" id="offline-channels"></div>
-                          <h2 style="margin-top: 30px;">❌ Errors</h2>
-                          <div class="channels-grid" id="error-channels"></div>
-                      </div>
-                  </div>
-                  <div class="footer">
-                      <p>🔄 Next refresh in ~6 hours</p>
-                      <p>🔒 Repository private • Playlist public via GitHub Pages</p>
-                      <p>⏰ <span id="last-updated"></span></p>
-                  </div>
+                  <h1>📺 Live News Streams</h1>
+                  <p>Playlist URL (for VLC/Streamlink):</p>
+                  <pre>https://uticap.github.io/Youtube-to-M3u8/streams.m3u8</pre>
+                  <a href="streams.m3u8" class="btn">▶️ Download Playlist</a>
+                  <h3>How to use:</h3>
+                  <pre>streamlink --player=vlc https://uticap.github.io/Youtube-to-M3u8/streams.m3u8 best</pre>
+                  <p>Or open the playlist directly in VLC (File → Open Network Stream)</p>
               </div>
-              <script>
-                  function copyUrl() {
-                      navigator.clipboard.writeText('https://uticap.github.io/Youtube-to-M3u8/streams.m3u8');
-                      alert('URL copied! Use with: streamlink --player=vlc THIS_URL best');
-                  }
-                  fetch('stats.txt').then(r=>r.text()).then(data=>{
-                      const stats = {};
-                      data.split('\n').forEach(l=>{let[k,v]=l.split('=');if(k&&v)stats[k]=v;});
-                      document.getElementById('stats-container').innerHTML = `
-                          <div class="stat-card"><div class="stat-value">${stats.active||0}</div><div class="stat-label">Active</div></div>
-                          <div class="stat-card"><div class="stat-value">${stats.total||0}</div><div class="stat-label">Total</div></div>
-                          <div class="stat-card"><div class="stat-value">${stats.quality_1080p||0}</div><div class="stat-label">1080p</div></div>
-                          <div class="stat-card"><div class="stat-value">${stats.quality_720p||0}</div><div class="stat-label">720p</div></div>
-                      `;
-                      
-                      const live = stats.active_channels ? stats.active_channels.split(',') : [];
-                      document.getElementById('live-channels').innerHTML = live.map(ch=>`
-                          <div class="channel-card"><div class="channel-name">🔴 ${ch}</div></div>
-                      `).join('') || '<p>No live channels</p>';
-                      
-                      const offline = stats.offline_channels ? stats.offline_channels.split(',') : [];
-                      document.getElementById('offline-channels').innerHTML = offline.map(ch=>`
-                          <div class="channel-card" style="border-left-color:#999;"><div class="channel-name">⚫ ${ch}</div></div>
-                      `).join('') || '<p>No offline channels</p>';
-                      
-                      const errors = stats.error_channels ? stats.error_channels.split(',') : [];
-                      document.getElementById('error-channels').innerHTML = errors.map(ch=>`
-                          <div class="channel-card" style="border-left-color:#dc3545;"><div class="channel-name">❌ ${ch}</div></div>
-                      `).join('') || '<p>No errors</p>';
-                      
-                      document.getElementById('last-updated').textContent = new Date().toLocaleString();
-                  });
-              </script>
           </body>
           </html>
-          HTML_EOF
-          
-          echo "✅ GitHub Pages files created"
+          EOF
 
-      - name: Validate and clean M3U8
-        run: |
-          sed -i '/^<<<<<<< /d' streams.m3u8 2>/dev/null || true
-          sed -i '/^=======/d' streams.m3u8 2>/dev/null || true
-          sed -i '/^>>>>>>> /d' streams.m3u8 2>/dev/null || true
-          awk '!seen[$0]++' streams.m3u8 > streams_clean.m3u8 2>/dev/null || true
-          mv streams_clean.m3u8 streams.m3u8 2>/dev/null || true
-          if ! grep -q "^#EXTM3U" streams.m3u8; then echo "❌ Invalid M3U8"; exit 1; fi
-          echo "✅ M3U8 validated ($(wc -l < streams.m3u8) lines)"
-
-      - name: Show playlist preview
-        run: |
-          echo "📄 streams.m3u8 preview:"
-          echo "========================"
-          head -20 streams.m3u8
-          echo "..."
-
-      - name: Send Telegram Notification
-        uses: cbrgm/telegram-github-action@v1
-        if: success()
-        with:
-          token: ${{ secrets.TELEGRAM_TOKEN }}
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          message: |
-            📺 *YouTube Playlist Updated*
-            
-            ✅ *Active:* ${{ steps.stats.outputs.active }}/${{ steps.stats.outputs.total }}
-            📊 *Quality:* 1080p:${{ steps.stats.outputs.quality_1080p }} 720p:${{ steps.stats.outputs.quality_720p }}
-            
-            🌐 *GitHub Pages:*
-            https://uticap.github.io/Youtube-to-M3u8/streams.m3u8
-            
-            🕐 *Updated:* $(date -u '+%H:%M UTC')
-        continue-on-error: true
-
-      - name: Commit and push with retry
+      - name: Commit and push
         env:
-          PAT_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          git add -f streams.m3u8 stats.txt .nojekyll _config.yml index.html
+          git add -f streams.m3u8 stats.txt .nojekyll index.html
           
           if git diff --cached --quiet; then
             echo "ℹ️ No changes"
             exit 0
           fi
           
-          git commit -m "🔄 Update playlist [$(date -u +%H:%M)] - ${{ steps.stats.outputs.active }}/${{ steps.stats.outputs.total }} active"
-          
-          MAX_RETRIES=5
-          DELAY=10
-          SUCCESS=false
-          
-          for i in $(seq 1 $MAX_RETRIES); do
-            echo "📤 Attempt $i/$MAX_RETRIES..."
-            if ! git pull --rebase origin main 2>/dev/null; then
-              git pull origin main || true
-            fi
-            if git push "https://x-access-token:${PAT_TOKEN}@github.com/${{ github.repository }}.git" HEAD:main; then
-              echo "✅ Pushed on attempt $i"
-              SUCCESS=true
-              break
-            else
-              if [ $i -lt $MAX_RETRIES ]; then
-                echo "⚠️ Retry in ${DELAY}s..."
-                sleep $DELAY
-                DELAY=$((DELAY * 2))
-              fi
-            fi
-          done
-          
-          if [ "$SUCCESS" = false ]; then
-            echo "❌ Push failed"
-            exit 1
-          fi
+          git commit -m "🔄 Update playlist [$(date -u +%H:%M)]"
+          git push
+          echo "✅ Playlist updated"
 
-      - name: Cleanup
-        if: always()
-        run: |
-          shred -u cookies.txt 2>/dev/null || rm -f cookies.txt
-          shred -u stats.txt 2>/dev/null || rm -f stats.txt
-          echo "🧹 Cleaned up"
-
-      - name: Send failure notification
-        if: failure()
-        uses: cbrgm/telegram-github-action@v1
+      - name: Send Telegram notification
+        if: success() && github.event_name == 'workflow_dispatch'
+        uses: appleboy/telegram-action@master
         with:
-          token: ${{ secrets.TELEGRAM_TOKEN }}
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
           message: |
-            ❌ *Workflow Failed*
-            Repo: ${{ github.repository }}
-            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        continue-on-error: true
+            📺 *YouTube Playlist Updated*
+            
+            ✅ Active: ${{ steps.generate.outputs.active }} channels
+            
+            🔗 https://uticap.github.io/Youtube-to-M3u8/streams.m3u8
