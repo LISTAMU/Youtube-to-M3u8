@@ -1,169 +1,26 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
+    <title>Live News Streams</title>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🇳🇬 Nigeria News Streams</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            overflow: hidden;
-        }
-        .header {
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-            color: white;
-            padding: 40px;
-            text-align: center;
-        }
-        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
-        .header p { font-size: 1.2em; opacity: 0.95; }
-        .content { padding: 40px; }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .stat-card {
-            background: #f8f9fa;
-            padding: 25px;
-            border-radius: 12px;
-            text-align: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .stat-value {
-            font-size: 2.5em;
-            font-weight: bold;
-            color: #4CAF50;
-            margin-bottom: 5px;
-        }
-        .stat-label { color: #666; font-size: 0.9em; text-transform: uppercase; }
-        .url-box {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            border: 2px solid #e0e0e0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-        .url-box code { word-break: break-all; color: #333; }
-        .btn {
-            background: #4CAF50;
-            color: white;
-            padding: 12px 24px;
-            border-radius: 6px;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            border: none;
-            cursor: pointer;
-        }
-        .btn:hover { background: #45a049; }
-        .channels-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
-        }
-        .channel-card {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            border-left: 4px solid #4CAF50;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .channel-name { font-weight: bold; color: #333; }
-        .footer {
-            background: #f8f9fa;
-            padding: 30px;
-            text-align: center;
-            color: #666;
-            border-top: 1px solid #e0e0e0;
-        }
+        body { font-family: Arial; padding: 20px; background: #f0f0f0; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
+        h1 { color: #333; }
+        .btn { background: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; display: inline-block; margin: 10px 0; border-radius: 5px; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 5px; overflow-x: auto; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>🇳🇬 Nigeria News Streams</h1>
-            <p>Live YouTube streams • Updated every 6 hours</p>
-        </div>
-        <div class="content">
-            <div class="stats-grid" id="stats-container">
-                <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Active</div></div>
-                <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Total</div></div>
-                <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">1080p</div></div>
-                <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">720p</div></div>
-            </div>
-            <div class="playlist-section">
-                <h2>📋 M3U8 Playlist</h2>
-                <div class="url-box">
-                    <code id="playlist-url">https://uticap.github.io/Youtube-to-M3u8/streams.m3u8</code>
-                    <button class="btn" onclick="copyUrl()">📋 Copy</button>
-                </div>
-                <a href="streams.m3u8" class="btn">▶️ Open Playlist</a>
-            </div>
-            <div class="playlist-section">
-                <h2>📡 Live Channels</h2>
-                <div class="channels-grid" id="live-channels"></div>
-                <h2 style="margin-top: 30px;">⚫ Offline</h2>
-                <div class="channels-grid" id="offline-channels"></div>
-                <h2 style="margin-top: 30px;">❌ Errors</h2>
-                <div class="channels-grid" id="error-channels"></div>
-            </div>
-        </div>
-        <div class="footer">
-            <p>🔄 Next refresh in ~6 hours</p>
-            <p>🔒 Repository private • Playlist public via GitHub Pages</p>
-            <p>⏰ <span id="last-updated"></span></p>
-        </div>
+        <h1>📺 Live News Streams</h1>
+        <p>Playlist URL (for VLC/Streamlink):</p>
+        <pre>https://uticap.github.io/Youtube-to-M3u8/streams.m3u8</pre>
+        <a href="streams.m3u8" class="btn">▶️ Download Playlist</a>
+        <h3>How to use:</h3>
+        <pre>streamlink --player=vlc https://uticap.github.io/Youtube-to-M3u8/streams.m3u8 best</pre>
+        <p>Or open the playlist directly in VLC (File → Open Network Stream)</p>
     </div>
-    <script>
-        function copyUrl() {
-            navigator.clipboard.writeText('https://uticap.github.io/Youtube-to-M3u8/streams.m3u8');
-            alert('URL copied! Use with: streamlink --player=vlc THIS_URL best');
-        }
-        fetch('stats.txt').then(r=>r.text()).then(data=>{
-            const stats = {};
-            data.split('\n').forEach(l=>{let[k,v]=l.split('=');if(k&&v)stats[k]=v;});
-            document.getElementById('stats-container').innerHTML = `
-                <div class="stat-card"><div class="stat-value">${stats.active||0}</div><div class="stat-label">Active</div></div>
-                <div class="stat-card"><div class="stat-value">${stats.total||0}</div><div class="stat-label">Total</div></div>
-                <div class="stat-card"><div class="stat-value">${stats.quality_1080p||0}</div><div class="stat-label">1080p</div></div>
-                <div class="stat-card"><div class="stat-value">${stats.quality_720p||0}</div><div class="stat-label">720p</div></div>
-            `;
-            
-            const live = stats.active_channels ? stats.active_channels.split(',') : [];
-            document.getElementById('live-channels').innerHTML = live.map(ch=>`
-                <div class="channel-card"><div class="channel-name">🔴 ${ch}</div></div>
-            `).join('') || '<p>No live channels</p>';
-            
-            const offline = stats.offline_channels ? stats.offline_channels.split(',') : [];
-            document.getElementById('offline-channels').innerHTML = offline.map(ch=>`
-                <div class="channel-card" style="border-left-color:#999;"><div class="channel-name">⚫ ${ch}</div></div>
-            `).join('') || '<p>No offline channels</p>';
-            
-            const errors = stats.error_channels ? stats.error_channels.split(',') : [];
-            document.getElementById('error-channels').innerHTML = errors.map(ch=>`
-                <div class="channel-card" style="border-left-color:#dc3545;"><div class="channel-name">❌ ${ch}</div></div>
-            `).join('') || '<p>No errors</p>';
-            
-            document.getElementById('last-updated').textContent = new Date().toLocaleString();
-        });
-    </script>
 </body>
 </html>
