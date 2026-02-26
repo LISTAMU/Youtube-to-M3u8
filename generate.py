@@ -23,7 +23,7 @@ class YouTubePlaylistGenerator:
         self.cookies_file = cookies_file
         self.cache_file = '.channel_cache.json'
         self.logos_dir = 'logos'
-        self.channels_dir = 'channels'  # Directory for individual channel files
+        self.channels_dir = 'channels'
         self.load_cache()
         
         # Create directories
@@ -47,7 +47,6 @@ class YouTubePlaylistGenerator:
     
     def safe_filename(self, name):
         """Convert channel name to safe filename"""
-        # Remove special characters and replace spaces
         safe = re.sub(r'[^\w\s-]', '', name).strip()
         safe = re.sub(r'[-\s]+', '_', safe)
         return safe.lower()
@@ -56,19 +55,15 @@ class YouTubePlaylistGenerator:
         """Fetch and cache channel logo"""
         logo_path = f"{self.logos_dir}/{channel_id}.jpg"
         
-        # Check if logo already exists and is recent (< 7 days old)
         if os.path.exists(logo_path):
             file_age = time.time() - os.path.getmtime(logo_path)
             if file_age < 604800:  # 7 days
                 return logo_path
         
-        # Try to fetch logo
         try:
-            # Try different thumbnail qualities
             qualities = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault']
             base_url = "https://i.ytimg.com/vi/{}/{}.jpg"
             
-            # First try with a known video ID from cache
             if channel_id in self.cache['channels']:
                 video_id = self.cache['channels'][channel_id].get('video_id')
                 if video_id:
@@ -81,25 +76,23 @@ class YouTubePlaylistGenerator:
                                 f.write(img_data)
                             print(f"  ✅ Logo saved: {quality}")
                             return logo_path
-            
-            # Fallback to default logo
             return None
         except Exception as e:
             print(f"  ⚠️ Logo fetch failed: {str(e)[:50]}")
             return None
     
     def get_stream_info(self, url):
-        """Get stream URL and metadata with quality options"""
+        """Get stream URL and metadata with better live detection"""
         ydl_opts = {
             'cookies': self.cookies_file,
             'quiet': True,
             'no_warnings': True,
             'socket_timeout': 30,
-            'retries': 3,
+            'retries': 5,
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['web', 'android'],
-                    'player_skip': ['webpage', 'configs']
+                    'player_client': ['web', 'android', 'ios'],
+                    'skip': ['webpage', 'configs']
                 }
             }
         }
@@ -117,7 +110,7 @@ class YouTubePlaylistGenerator:
                 channel_name = info.get('channel', 'Unknown')
                 channel_url = info.get('channel_url', url)
                 
-                # Clean channel name for filename
+                # Clean channel name
                 clean_name = re.sub(r'[^\w\s-]', '', channel_name).strip()
                 
                 # Cache channel info
@@ -128,68 +121,104 @@ class YouTubePlaylistGenerator:
                     'last_seen': datetime.now().isoformat()
                 }
                 
-                # Check if live
-                is_live = info.get('is_live', False)
+                # BETTER LIVE DETECTION
+                is_live = False
                 live_status = info.get('live_status', '')
                 
-                if not (is_live or live_status == 'is_live'):
+                # Check multiple indicators
+                if live_status == 'is_live':
+                    is_live = True
+                elif info.get('is_live'):
+                    is_live = True
+                elif info.get('was_live'):
+                    is_live = False
+                
+                # Also check formats for live indicators
+                formats = info.get('formats', [])
+                has_live_format = any(
+                    f.get('manifest_url') and 'live' in str(f.get('protocol', ''))
+                    for f in formats
+                )
+                
+                if has_live_format and not is_live:
+                    is_live = True
+                
+                # Check for scheduled streams
+                if 'schedule' in str(info.get('title', '')).lower():
+                    is_live = False
+                
+                if not is_live:
+                    print(f"  ⚠️ Not currently live (status: {live_status})")
                     return {
                         'status': 'offline',
                         'video_id': video_id,
                         'channel_id': channel_id,
                         'name': clean_name,
                         'title': title,
-                        'channel_url': channel_url
+                        'channel_url': channel_url,
+                        'is_live': False
                     }
-                
-                formats = info.get('formats', [])
                 
                 # Get quality-specific streams
                 quality_streams = {}
                 
-                for profile_name, profile in QUALITY_PROFILES.items():
-                    # Skip audio for now (handle separately)
-                    if profile_name == 'audio':
-                        continue
-                    
-                    # Filter video formats
+                # Filter for actual live video formats
+                video_formats = []
+                for f in formats:
+                    if f.get('manifest_url') or 'live' in str(f.get('protocol', '')):
+                        if f.get('height') and f.get('url') and f.get('vcodec') != 'none':
+                            video_formats.append(f)
+                
+                # If no live formats found, try all video formats
+                if not video_formats:
                     video_formats = [
                         f for f in formats 
                         if f.get('height') and f.get('url') and f.get('vcodec') != 'none'
                     ]
-                    
-                    if not video_formats:
-                        continue
-                    
-                    # Apply profile filters
-                    if 'min_height' in profile:
-                        video_formats = [f for f in video_formats if f.get('height', 0) >= profile['min_height']]
-                    elif 'max_height' in profile:
-                        video_formats = [f for f in video_formats if f.get('height', 0) <= profile['max_height']]
-                    
-                    if not video_formats:
-                        continue
-                    
-                    # Select best format based on priority
-                    best_format = None
-                    for target in profile.get('priority', []):
-                        for fmt in video_formats:
-                            if fmt.get('height') == target:
-                                best_format = fmt
-                                break
-                        if best_format:
-                            break
-                    
-                    if not best_format and video_formats:
-                        best_format = video_formats[0]
-                    
-                    if best_format:
-                        quality_streams[profile_name] = {
-                            'url': best_format['url'],
-                            'height': best_format.get('height', 0),
-                            'fps': best_format.get('fps', 30),
-                            'quality_tag': f"{best_format.get('height', 0)}p"
-                        }
+                
+                if not video_formats:
+                    print("  ⚠️ No suitable video formats found")
+                    return {
+                        'status': 'offline',
+                        'video_id': video_id,
+                        'channel_id': channel_id,
+                        'name': clean_name,
+                        'title': title,
+                        'channel_url': channel_url,
+                        'is_live': False
+                    }
+                
+                # Sort by quality
+                video_formats.sort(key=lambda f: (f.get('height', 0), f.get('fps', 0)), reverse=True)
+                
+                # Get HD format (720p+)
+                hd_formats = [f for f in video_formats if f.get('height', 0) >= 720]
+                if hd_formats:
+                    quality_streams['hd'] = {
+                        'url': hd_formats[0]['url'],
+                        'height': hd_formats[0].get('height', 0),
+                        'fps': hd_formats[0].get('fps', 30),
+                        'quality_tag': f"{hd_formats[0].get('height', 0)}p"
+                    }
+                
+                # Get mobile format (480p and below)
+                mobile_formats = [f for f in video_formats if f.get('height', 0) <= 480]
+                if mobile_formats:
+                    quality_streams['mobile'] = {
+                        'url': mobile_formats[0]['url'],
+                        'height': mobile_formats[0].get('height', 0),
+                        'fps': mobile_formats[0].get('fps', 30),
+                        'quality_tag': f"{mobile_formats[0].get('height', 0)}p"
+                    }
+                
+                # Always have at least one format
+                if not quality_streams and video_formats:
+                    quality_streams['main'] = {
+                        'url': video_formats[0]['url'],
+                        'height': video_formats[0].get('height', 0),
+                        'fps': video_formats[0].get('fps', 30),
+                        'quality_tag': f"{video_formats[0].get('height', 0)}p"
+                    }
                 
                 # Get channel logo
                 logo_path = self.fetch_channel_logo(channel_id, clean_name)
@@ -202,7 +231,8 @@ class YouTubePlaylistGenerator:
                     'title': title,
                     'channel_url': channel_url,
                     'streams': quality_streams,
-                    'logo': logo_path
+                    'logo': logo_path,
+                    'is_live': True
                 }
                 
         except Exception as e:
@@ -210,29 +240,34 @@ class YouTubePlaylistGenerator:
             return None
     
     def generate_individual_playlists(self, channels_data):
-        """Generate individual M3U8 files for each channel"""
+        """Generate individual M3U8 files for each channel with validation"""
         individual_channels = []
         
         for channel in channels_data:
-            if channel.get('status') == 'live':
-                channel_name = channel.get('name', 'unknown')
-                channel_id = channel.get('channel_id', '')
-                
-                # Create safe filename
-                safe_name = self.safe_filename(channel_name)
-                filename = f"{self.channels_dir}/{safe_name}.m3u8"
-                
-                # Get best quality stream (prefer HD)
+            channel_name = channel.get('name', 'unknown')
+            channel_id = channel.get('channel_id', '')
+            
+            # Create safe filename
+            safe_name = self.safe_filename(channel_name)
+            filename = f"{self.channels_dir}/{safe_name}.m3u8"
+            
+            # Check if channel is actually live
+            is_live = channel.get('is_live', False) and channel.get('status') == 'live'
+            
+            if is_live:
+                # Get best quality stream
                 main_stream = channel.get('streams', {}).get('hd', {})
                 if not main_stream:
-                    # Fallback to any stream
                     for s in channel.get('streams', {}).values():
                         main_stream = s
                         break
                 
-                if main_stream:
+                if main_stream and main_stream.get('url'):
                     quality_tag = main_stream.get('quality_tag', '')
                     logo_attr = f' tvg-logo="{channel["logo"]}"' if channel.get('logo') else ''
+                    
+                    # Add a note about URL expiration
+                    expiry_time = (datetime.now() + timedelta(hours=5)).strftime('%H:%M UTC')
                     
                     with open(filename, 'w', encoding='utf-8') as f:
                         f.write(f"""#EXTM3U
@@ -240,37 +275,51 @@ class YouTubePlaylistGenerator:
 # Channel: {channel_name}
 # ID: {channel_id}
 # Quality: {quality_tag}
+# Status: LIVE (as of {datetime.now().strftime('%H:%M UTC')})
 # Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
-# URL expires: ~6 hours from generation
+# URL expires: ~{expiry_time} (refresh playlist if expired)
 
-#EXTINF:-1 tvg-id="{channel_id}"{logo_attr} tvg-name="{channel_name}" group-title="Individual",{channel_name} [{quality_tag}]
+#EXTINF:-1 tvg-id="{channel_id}"{logo_attr} tvg-name="{channel_name}" group-title="Individual",{channel_name} [{quality_tag}] 🔴 LIVE
 {main_stream['url']}
 """)
-                    print(f"  ✅ Individual: {filename}")
+                    print(f"  ✅ LIVE: {filename}")
                     
                     individual_channels.append({
                         'name': channel_name,
                         'file': filename,
                         'id': channel_id,
                         'quality': quality_tag,
+                        'status': 'live',
                         'url': main_stream['url']
                     })
                 else:
-                    # Offline or error channel - create fallback
-                    safe_name = self.safe_filename(channel_name)
-                    filename = f"{self.channels_dir}/{safe_name}.m3u8"
-                    
+                    # No valid stream URL
                     with open(filename, 'w', encoding='utf-8') as f:
                         f.write(f"""#EXTM3U
 #EXT-X-VERSION:3
 # Channel: {channel_name}
+# ID: {channel_id}
+# Status: STREAM UNAVAILABLE
+# Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
+
+#EXTINF:-1 tvg-name="{channel_name}",{channel_name} [Stream Unavailable - Check YouTube]
+{channel.get('channel_url', 'https://youtube.com')}
+""")
+                    print(f"  ⚠️ UNAVAILABLE: {filename}")
+            else:
+                # Channel is offline
+                with open(filename, 'w', encoding='utf-8') as f:
+                    f.write(f"""#EXTM3U
+#EXT-X-VERSION:3
+# Channel: {channel_name}
+# ID: {channel_id}
 # Status: OFFLINE
 # Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
 
 #EXTINF:-1 tvg-name="{channel_name}",{channel_name} [OFFLINE - Click for YouTube page]
 {channel.get('channel_url', 'https://youtube.com')}
 """)
-                    print(f"  ⚠️ Individual (offline): {filename}")
+                print(f"  ⚫ OFFLINE: {filename}")
         
         # Save list of individual channels
         with open(f"{self.channels_dir}/channels.json", 'w') as f:
@@ -280,7 +329,7 @@ class YouTubePlaylistGenerator:
                 'channels': individual_channels
             }, f, indent=2)
         
-        # Generate HTML index for individual channels
+        # Generate HTML index
         self.generate_channels_html(individual_channels)
         
         return individual_channels
@@ -446,7 +495,6 @@ class YouTubePlaylistGenerator:
         
         for channel in channels_data:
             if channel.get('status') == 'live':
-                # Add channel element
                 channel_elem = ET.SubElement(tv, "channel", {"id": channel['channel_id']})
                 
                 display_name = ET.SubElement(channel_elem, "display-name")
@@ -455,7 +503,6 @@ class YouTubePlaylistGenerator:
                 if channel.get('logo'):
                     icon = ET.SubElement(channel_elem, "icon", {"src": channel['logo']})
                 
-                # Add sample programme (current live stream)
                 programme = ET.SubElement(tv, "programme", {
                     "start": datetime.now().strftime("%Y%m%d%H%M%S +0000"),
                     "stop": (datetime.now() + timedelta(hours=1)).strftime("%Y%m%d%H%M%S +0000"),
@@ -471,12 +518,10 @@ class YouTubePlaylistGenerator:
                 category = ET.SubElement(programme, "category")
                 category.text = "Live"
         
-        # Pretty print XML
         rough_string = ET.tostring(tv, encoding='unicode')
         reparsed = minidom.parseString(rough_string)
         pretty_xml = reparsed.toprettyxml(indent="  ", encoding='utf-8').decode('utf-8')
         
-        # Save EPG
         with open('epg.xml', 'w', encoding='utf-8') as f:
             f.write(pretty_xml)
         
@@ -485,7 +530,6 @@ class YouTubePlaylistGenerator:
     def generate_playlists(self, all_channels):
         """Generate multiple playlists (main, HD, mobile, audio)"""
         
-        # Initialize playlist containers
         playlists = {
             'main': [],
             'hd': [],
@@ -493,7 +537,6 @@ class YouTubePlaylistGenerator:
             'audio': []
         }
         
-        # Common headers
         headers = [
             "#EXTM3U",
             "#EXT-X-VERSION:3",
@@ -506,7 +549,6 @@ class YouTubePlaylistGenerator:
         for playlist_name in playlists:
             playlists[playlist_name] = headers.copy()
         
-        # Stats tracking
         stats = {
             'total': len(all_channels),
             'live': 0,
@@ -517,12 +559,10 @@ class YouTubePlaylistGenerator:
             'individual_channels': []
         }
         
-        # Process each channel
         for channel in all_channels:
             channel_name = channel.get('name', 'Unknown')
             channel_id = channel.get('channel_id', '')
             
-            # Determine category (simple logic - customize as needed)
             category = 'General'
             if 'news' in channel_name.lower():
                 category = 'News'
@@ -533,13 +573,11 @@ class YouTubePlaylistGenerator:
             
             stats['by_category'][category] = stats['by_category'].get(category, 0) + 1
             
-            # Add logo to EXTINF if available
             logo_attr = f' tvg-logo="{channel["logo"]}"' if channel.get('logo') else ''
             
             if channel.get('status') == 'live':
                 stats['live'] += 1
                 
-                # Track quality
                 height = 0
                 for stream_data in channel.get('streams', {}).values():
                     height = max(height, stream_data.get('height', 0))
@@ -553,10 +591,8 @@ class YouTubePlaylistGenerator:
                 else:
                     stats['qualities']['other'] += 1
                 
-                # Add to main playlist (prefer HD)
                 main_stream = channel.get('streams', {}).get('hd', {})
                 if not main_stream:
-                    # Fallback to any stream
                     for s in channel.get('streams', {}).values():
                         main_stream = s
                         break
@@ -570,7 +606,6 @@ class YouTubePlaylistGenerator:
                     playlists['main'].append(main_stream['url'])
                     playlists['main'].append("")
                     
-                    # Add to individual channels list
                     safe_name = self.safe_filename(channel_name)
                     stats['individual_channels'].append({
                         'name': channel_name,
@@ -578,7 +613,6 @@ class YouTubePlaylistGenerator:
                         'quality': quality_tag
                     })
                 
-                # Add to quality-specific playlists
                 for profile_name in ['hd', 'mobile']:
                     if profile_name in channel.get('streams', {}):
                         stream = channel['streams'][profile_name]
@@ -612,7 +646,6 @@ class YouTubePlaylistGenerator:
                     playlists[playlist_name].append(f"https://youtube.com/watch?v={channel.get('video_id', '')}")
                     playlists[playlist_name].append("")
         
-        # Add summary to each playlist
         summary = [
             "",
             f"# Summary: {stats['live']}/{stats['total']} streams active",
@@ -625,7 +658,6 @@ class YouTubePlaylistGenerator:
         for playlist_name in playlists:
             playlists[playlist_name].extend(summary)
         
-        # Save all playlists
         playlist_files = {
             'main': 'streams.m3u8',
             'hd': 'streams_hd.m3u8',
@@ -638,14 +670,12 @@ class YouTubePlaylistGenerator:
                 f.write('\n'.join(playlists[name]))
             print(f"✅ Saved: {filename}")
         
-        # Save stats
         with open('stats.json', 'w') as f:
             json.dump(stats, f, indent=2)
         
         return stats, playlists
 
 def main():
-    # Read streams.txt
     if not os.path.exists('streams.txt'):
         print("❌ streams.txt not found")
         return
@@ -659,14 +689,12 @@ def main():
     
     print(f"📡 Processing {len(lines)} channels...")
     
-    # Initialize generator
     generator = YouTubePlaylistGenerator()
     
-    # Process each channel
     channels_data = []
     for i, url in enumerate(lines, 1):
         print(f"\n📺 [{i}/{len(lines)}] Processing: {url}")
-        time.sleep(random.uniform(2, 5))  # Rate limiting
+        time.sleep(random.uniform(2, 5))
         
         channel_info = generator.get_stream_info(url)
         if channel_info:
@@ -678,22 +706,17 @@ def main():
             else:
                 print(f"  ⚠️ {channel_info['status'].upper()}")
     
-    # Generate EPG
     print("\n📋 Generating EPG...")
     generator.generate_epg(channels_data)
     
-    # Generate playlists
     print("\n🎬 Generating playlists...")
     stats, playlists = generator.generate_playlists(channels_data)
     
-    # Generate individual channel playlists
     print("\n📺 Generating individual channel playlists...")
     individual_channels = generator.generate_individual_playlists(channels_data)
     
-    # Save cache
     generator.save_cache()
     
-    # Print summary
     print(f"\n{'='*50}")
     print(f"📊 FINAL STATISTICS:")
     print(f"   Live: {stats['live']}/{stats['total']}")
