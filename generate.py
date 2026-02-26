@@ -23,7 +23,7 @@ class YouTubePlaylistGenerator:
         self.cookies_file = cookies_file
         self.cache_file = '.channel_cache.json'
         self.logos_dir = 'logos'
-        self.channels_dir = 'channels'  # New directory for individual channel files
+        self.channels_dir = 'channels'  # Directory for individual channel files
         self.load_cache()
         
         # Create directories
@@ -286,33 +286,33 @@ class YouTubePlaylistGenerator:
         return individual_channels
     
     def generate_channels_html(self, channels):
-        """Generate an HTML index page for all individual channels"""
+        """Generate a simple HTML index page for all individual channels"""
         html = """<!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>📺 Individual Channel Streams</title>
+    <title>📺 Individual Channels</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
+        body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
         }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
             background: white;
             border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             overflow: hidden;
         }
-        .header {
+        .header { 
             background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-            color: white;
-            padding: 30px;
+            color: white; 
+            padding: 30px; 
             text-align: center;
         }
         .header h1 { font-size: 2em; margin-bottom: 10px; }
@@ -321,6 +321,7 @@ class YouTubePlaylistGenerator:
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 20px;
+            margin-top: 20px;
         }
         .channel-card {
             background: #f8f9fa;
@@ -352,6 +353,8 @@ class YouTubePlaylistGenerator:
             margin-right: 10px;
             margin-bottom: 10px;
             font-size: 0.9em;
+            border: none;
+            cursor: pointer;
         }
         .btn:hover { background: #45a049; }
         .btn-outline {
@@ -370,13 +373,11 @@ class YouTubePlaylistGenerator:
             color: #666;
             border-top: 1px solid #e0e0e0;
         }
-        .badge {
-            display: inline-block;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 0.8em;
-            background: #d4edda;
-            color: #155724;
+        code {
+            background: #f5f5f5;
+            padding: 3px 6px;
+            border-radius: 3px;
+            font-size: 0.85em;
         }
         @media (max-width: 768px) {
             .channel-grid { grid-template-columns: 1fr; }
@@ -395,11 +396,12 @@ class YouTubePlaylistGenerator:
                 <a href="../streams.m3u8" class="btn">📋 Main Playlist</a>
                 <a href="../streams_hd.m3u8" class="btn">🎥 HD Playlist</a>
                 <a href="../streams_mobile.m3u8" class="btn">📱 Mobile Playlist</a>
+                <a href="../epg.xml" class="btn">📺 EPG Guide</a>
             </div>
             
-            <h2 style="margin-bottom: 20px;">Available Channels ({} live)</h2>
+            <h2 style="margin-bottom: 20px;">Available Channels (""" + str(len(channels)) + """ live)</h2>
             <div class="channel-grid">
-""".format(len(channels))
+"""
         
         for ch in channels:
             filename = ch['file'].replace('channels/', '')
@@ -408,12 +410,12 @@ class YouTubePlaylistGenerator:
                     <div class="channel-name">{ch['name']}</div>
                     <div class="channel-quality">🔴 LIVE • {ch['quality']}</div>
                     <div>
-                        <a href="{filename}" class="btn">▶️ Play M3U8</a>
+                        <a href="{filename}" class="btn">▶️ Play</a>
                         <a href="{filename}" download class="btn btn-outline">📥 Download</a>
                     </div>
                     <div style="margin-top: 10px;">
                         <small>Copy URL:</small><br>
-                        <code style="font-size: 0.8em;">../channels/{filename}</code>
+                        <code>../channels/{filename}</code>
                     </div>
                 </div>"""
         
@@ -423,11 +425,12 @@ class YouTubePlaylistGenerator:
         
         <div class="footer">
             <p>🔄 Refreshes every 6 hours • URLs expire ~6 hours</p>
-            <p>⏰ Last updated: {}</p>
+            <p>⏰ Last updated: """ + datetime.now().strftime('%Y-%m-%d %H:%M UTC') + """</p>
+            <p>🔗 GitHub: <a href="https://github.com/uticap/Youtube-to-M3u8">uticap/Youtube-to-M3u8</a></p>
         </div>
     </div>
 </body>
-</html>""".format(datetime.now().strftime('%Y-%m-%d %H:%M UTC'))
+</html>"""
         
         with open(f"{self.channels_dir}/index.html", 'w', encoding='utf-8') as f:
             f.write(html)
@@ -613,7 +616,7 @@ class YouTubePlaylistGenerator:
         summary = [
             "",
             f"# Summary: {stats['live']}/{stats['total']} streams active",
-            f"# Quality: {stats['qualities']['1080p']}x1080p, {stats['qualities']['720p']}x720p",
+            f"# Quality: {stats['qualities']['1080p']}x1080p, {stats['qualities']['720p']}x720p, {stats['qualities']['480p']}x480p",
             f"# Categories: {', '.join([f'{k}:{v}' for k, v in stats['by_category'].items()])}",
             f"# Individual channels: https://uticap.github.io/Youtube-to-M3u8/channels/",
             f"# Updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
