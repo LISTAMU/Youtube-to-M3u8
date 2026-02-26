@@ -16,45 +16,6 @@ QUALITY_PROFILES = {
     'mobile': {'max_height': 480, 'suffix': '[Mobile]', 'priority': [480, 360]},
     'audio': {'format': 'bestaudio', 'suffix': '[Audio]', 'priority': []}
 }
-
-# Country mapping for channels (EXPANDED FOR BETTER DETECTION)
-CHANNEL_COUNTRIES = {
-    # Nigerian channels
-    'arise': 'NG',
-    'channels': 'NG',
-    'tvc': 'NG',
-    'nta': 'NG',
-    'ait': 'NG',
-    'silverbird': 'NG',
-    'nigerian': 'NG',
-    'nigeria': 'NG',
-    'lagos': 'NG',
-    'abuja': 'NG',
-    'channelstv': 'NG',
-    'plustv': 'NG',
-    'wazobia': 'NG',
-    'coolfm': 'NG',
-    'naija': 'NG',
-    
-    # Ghanaian channels
-    'ghana': 'GH',
-    'ghanaian': 'GH',
-    'joy': 'GH',
-    'adom': 'GH',
-    'multitv': 'GH',
-    'ghone': 'GH',
-    'utv': 'GH',
-    'atv': 'GH',
-    'tv3': 'GH',
-    'cititv': 'GH',
-    'metro': 'GH',
-    'peace': 'GH',
-    'angel': 'GH',
-    'parliament': 'GH',
-    
-    # Default fallback
-    'default': 'US'
-}
 # =========================================
 
 class YouTubePlaylistGenerator:
@@ -94,24 +55,48 @@ class YouTubePlaylistGenerator:
         """Detect which country the channel belongs to based on name"""
         channel_name_lower = channel_name.lower()
         
-        # First check for explicit country names
-        if 'nigeria' in channel_name_lower or 'nigerian' in channel_name_lower:
-            print(f"  🌍 Found 'Nigeria' in name, using NG")
-            return 'NG'
+        # NIGERIAN CHANNELS - Expanded list with specific channel names
+        nigerian_keywords = [
+            # Country names
+            'nigeria', 'nigerian', 'lagos', 'abuja', 'naija', '9ja',
+            
+            # Specific Nigerian channels
+            'tvc news nigeria',
+            'channels television',
+            'arise news',
+            'nta', 'nitv', 'ait', 'silverbird', 'wazobia',
+            'cool fm', 'galaxy tv', 'bcos tv', 'mitv',
+            'plus tv nigeria', 'soundcity', 'hip tv',
+            'african magic', 'oneye', 'pulse nigeria',
+            'trust tv', 'raypower', 'brila fm'
+        ]
         
-        if 'ghana' in channel_name_lower or 'ghanaian' in channel_name_lower:
-            print(f"  🌍 Found 'Ghana' in name, using GH")
-            return 'GH'
+        for keyword in nigerian_keywords:
+            if keyword in channel_name_lower:
+                print(f"  🌍 Found Nigerian keyword: '{keyword}', using NG")
+                return 'NG'
         
-        # Then check keywords
-        for keyword, country in CHANNEL_COUNTRIES.items():
-            if keyword in channel_name_lower and keyword not in ['default', 'nigeria', 'ghana']:
-                print(f"  🌍 Detected {country} channel from keyword: {keyword}")
-                return country
+        # GHANAIAN CHANNELS
+        ghanaian_keywords = [
+            # Country names
+            'ghana', 'ghanaian', 'accra', 'kumasi',
+            
+            # Specific Ghanaian channels
+            'joy news', 'joy fm', 'adom tv', 'adom fm',
+            'tv3 ghana', 'tv3', 'cititv', 'citizen tv',
+            'utv ghana', 'utv', 'metro tv ghana', 'metro tv',
+            'peace fm', 'angel tv', 'multitv', 'ghone',
+            'ghana broadcasting', 'gbc', 'atv ghana', 'net2'
+        ]
         
-        # Default fallback
-        print(f"  🌍 No country detected, using default: {CHANNEL_COUNTRIES['default']}")
-        return CHANNEL_COUNTRIES['default']
+        for keyword in ghanaian_keywords:
+            if keyword in channel_name_lower:
+                print(f"  🌍 Found Ghanaian keyword: '{keyword}', using GH")
+                return 'GH'
+        
+        # Default to US if no match
+        print(f"  🌍 No country detected, using default: US")
+        return 'US'
     
     def fetch_channel_logo(self, channel_id, channel_name):
         """Fetch and cache channel logo"""
@@ -148,7 +133,6 @@ class YouTubePlaylistGenerator:
         
         # First, try to get channel name without full extraction to detect country
         try:
-            # Quick extraction just for channel name
             with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ydl:
                 info = ydl.extract_info(url, download=False, process=False)
                 channel_name = info.get('channel', '') if info else ''
@@ -159,7 +143,6 @@ class YouTubePlaylistGenerator:
         country = self.detect_channel_country(channel_name)
         print(f"  🌍 Using geo-bypass for country: {country}")
         
-        # ENHANCED yt-dlp options with geo-bypass
         ydl_opts = {
             'cookies': self.cookies_file,
             'quiet': True,
@@ -177,7 +160,6 @@ class YouTubePlaylistGenerator:
             'geo_bypass_country': country,
             'xff': country,
             
-            # ADDITIONAL HEADERS TO MIMIC LOCAL VIEWER
             'headers': {
                 'X-Forwarded-For': f'{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}',
                 'Accept-Language': f'en-{country},en;q=0.9',
@@ -199,10 +181,8 @@ class YouTubePlaylistGenerator:
                 channel_name = info.get('channel', 'Unknown')
                 channel_url = info.get('channel_url', url)
                 
-                # Clean channel name
                 clean_name = re.sub(r'[^\w\s-]', '', channel_name).strip()
                 
-                # Cache channel info
                 self.cache['channels'][channel_id] = {
                     'name': channel_name,
                     'video_id': video_id,
@@ -210,30 +190,22 @@ class YouTubePlaylistGenerator:
                     'last_seen': datetime.now().isoformat()
                 }
                 
-                # MORE LENIENT LIVE DETECTION
+                # LIVE DETECTION
                 is_live = False
                 live_status = info.get('live_status', '')
                 
-                # Check multiple indicators - be more generous
                 if live_status in ['is_live', 'is_upcoming', 'live']:
                     is_live = True
                 elif info.get('is_live'):
                     is_live = True
                 elif info.get('was_live'):
-                    # If it was live recently, still try to get stream
                     is_live = True
                     print(f"  ⚠️ Was live recently, attempting to get stream anyway")
                 
-                # Also check formats for any live indicators
                 formats = info.get('formats', [])
                 has_any_format = len(formats) > 0
-                has_live_format = any(
-                    f.get('manifest_url') or 'live' in str(f.get('protocol', ''))
-                    for f in formats
-                )
                 
                 if has_any_format and not is_live:
-                    # If there are formats, try anyway
                     is_live = True
                     print(f"  ⚠️ Has formats, attempting to get stream")
                 
@@ -246,25 +218,16 @@ class YouTubePlaylistGenerator:
                         'name': clean_name,
                         'title': title,
                         'channel_url': channel_url,
-                        'is_live': False
+                        'is_live': False,
+                        'country': country
                     }
                 
-                # Get quality-specific streams
+                # Get quality streams
                 quality_streams = {}
-                
-                # Filter for actual live video formats
-                video_formats = []
-                for f in formats:
-                    if f.get('manifest_url') or 'live' in str(f.get('protocol', '')):
-                        if f.get('height') and f.get('url') and f.get('vcodec') != 'none':
-                            video_formats.append(f)
-                
-                # If no live formats found, try all video formats
-                if not video_formats:
-                    video_formats = [
-                        f for f in formats 
-                        if f.get('height') and f.get('url') and f.get('vcodec') != 'none'
-                    ]
+                video_formats = [
+                    f for f in formats 
+                    if f.get('height') and f.get('url') and f.get('vcodec') != 'none'
+                ]
                 
                 if not video_formats:
                     print("  ⚠️ No suitable video formats found")
@@ -275,13 +238,12 @@ class YouTubePlaylistGenerator:
                         'name': clean_name,
                         'title': title,
                         'channel_url': channel_url,
-                        'is_live': False
+                        'is_live': False,
+                        'country': country
                     }
                 
-                # Sort by quality
                 video_formats.sort(key=lambda f: (f.get('height', 0), f.get('fps', 0)), reverse=True)
                 
-                # Get HD format (720p+)
                 hd_formats = [f for f in video_formats if f.get('height', 0) >= 720]
                 if hd_formats:
                     quality_streams['hd'] = {
@@ -291,7 +253,6 @@ class YouTubePlaylistGenerator:
                         'quality_tag': f"{hd_formats[0].get('height', 0)}p"
                     }
                 
-                # Get mobile format (480p and below)
                 mobile_formats = [f for f in video_formats if f.get('height', 0) <= 480]
                 if mobile_formats:
                     quality_streams['mobile'] = {
@@ -301,7 +262,6 @@ class YouTubePlaylistGenerator:
                         'quality_tag': f"{mobile_formats[0].get('height', 0)}p"
                     }
                 
-                # Always have at least one format
                 if not quality_streams and video_formats:
                     quality_streams['main'] = {
                         'url': video_formats[0]['url'],
@@ -310,13 +270,9 @@ class YouTubePlaylistGenerator:
                         'quality_tag': f"{video_formats[0].get('height', 0)}p"
                     }
                 
-                # Get channel logo
                 logo_path = self.fetch_channel_logo(channel_id, clean_name)
                 
                 print(f"  ✅ Geo-bypass successful for {country}")
-                if quality_streams:
-                    first_url = next(iter(quality_streams.values())).get('url', '')
-                    print(f"  🔗 URL preview: {first_url[:100]}...")
                 
                 return {
                     'status': 'live',
@@ -345,16 +301,13 @@ class YouTubePlaylistGenerator:
             channel_id = channel.get('channel_id', '')
             country = channel.get('country', 'Unknown')
             
-            # Create safe filename
             safe_name = self.safe_filename(channel_name)
             filename = f"{self.channels_dir}/{safe_name}.m3u8"
             
-            # Check if channel is actually live
             is_live = channel.get('is_live', False) and channel.get('status') == 'live'
             
             if is_live:
                 live_channels_found = True
-                # Get best quality stream
                 main_stream = channel.get('streams', {}).get('hd', {})
                 if not main_stream:
                     for s in channel.get('streams', {}).values():
@@ -365,11 +318,9 @@ class YouTubePlaylistGenerator:
                     quality_tag = main_stream.get('quality_tag', '')
                     logo_attr = f' tvg-logo="{channel["logo"]}"' if channel.get('logo') else ''
                     
-                    # Add a note about URL expiration
                     expiry_time = (datetime.now() + timedelta(hours=5)).strftime('%H:%M UTC')
                     
                     with open(filename, 'w', encoding='utf-8') as f:
-                        # Write header
                         f.write(f"""#EXTM3U
 #EXT-X-VERSION:3
 # Channel: {channel_name}
@@ -381,9 +332,7 @@ class YouTubePlaylistGenerator:
 # URL expires: ~{expiry_time} (refresh playlist if expired)
 
 """)
-                        # Write EXTINF line with clear line break
                         f.write(f'#EXTINF:-1 tvg-id="{channel_id}"{logo_attr} tvg-name="{channel_name}" group-title="Individual",{channel_name} [{quality_tag}] 🔴 LIVE\n')
-                        # Write URL on its own line
                         f.write(main_stream['url'])
                         f.write("\n")
                     
@@ -399,7 +348,6 @@ class YouTubePlaylistGenerator:
                         'country': country
                     })
                 else:
-                    # No valid stream URL
                     with open(filename, 'w', encoding='utf-8') as f:
                         f.write(f"""#EXTM3U
 #EXT-X-VERSION:3
@@ -413,7 +361,6 @@ class YouTubePlaylistGenerator:
 """)
                     print(f"  ⚠️ UNAVAILABLE: {filename}")
             else:
-                # Channel is offline - keep existing file but don't add to live list
                 print(f"  ⚫ OFFLINE: {filename} (keeping existing file)")
         
         # If NO live channels found, try to load previous channels.json
@@ -427,20 +374,17 @@ class YouTubePlaylistGenerator:
                         print(f"📋 Using {len(old_data['channels'])} channels from previous run")
                         individual_channels = old_data['channels']
                         
-                        # Update the M3U8 files to show OFFLINE status
                         for ch in individual_channels:
                             filename = ch['file']
                             if os.path.exists(filename):
                                 with open(filename, 'r') as f:
                                     content = f.read()
                                 if '🔴 LIVE' in content:
-                                    # Update to show offline
                                     with open(filename, 'w', encoding='utf-8') as f:
                                         f.write(content.replace('🔴 LIVE', '⚫ OFFLINE'))
             except Exception as e:
                 print(f"  ⚠️ Could not load previous channels: {e}")
         
-        # Save list of individual channels
         with open(f"{self.channels_dir}/channels.json", 'w') as f:
             json.dump({
                 'generated': datetime.now().isoformat(),
@@ -448,7 +392,6 @@ class YouTubePlaylistGenerator:
                 'channels': individual_channels
             }, f, indent=2)
         
-        # Generate HTML index
         self.generate_channels_html(individual_channels)
         
         return individual_channels
@@ -456,7 +399,6 @@ class YouTubePlaylistGenerator:
     def generate_channels_html(self, channels):
         """Generate HTML index page with channels directly embedded"""
         
-        # Build the channel list HTML
         channel_items = ""
         for ch in channels:
             filename = ch['file'].replace('channels/', '')
@@ -482,7 +424,6 @@ class YouTubePlaylistGenerator:
         </div>
         """
         
-        # If no channels, show message
         if not channel_items:
             channel_items = """
         <div style="text-align: center; padding: 40px; background: #f8f9fa; border-radius: 12px;">
@@ -491,7 +432,6 @@ class YouTubePlaylistGenerator:
         </div>
         """
         
-        # Complete HTML
         html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -712,10 +652,8 @@ class YouTubePlaylistGenerator:
             channel_id = channel.get('channel_id', '')
             country = channel.get('country', 'Unknown')
             
-            # Track by country
             stats['by_country'][country] = stats['by_country'].get(country, 0) + 1
             
-            # Determine category
             category = 'General'
             if 'news' in channel_name.lower():
                 category = 'News'
