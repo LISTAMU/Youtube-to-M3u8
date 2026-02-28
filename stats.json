@@ -1,20 +1,20 @@
 {
-  "total": 8,
-  "live": 8,
+  "total": 9,
+  "live": 9,
   "offline": 0,
   "error": 0,
   "qualities": {
-    "1080p": 5,
+    "1080p": 6,
     "720p": 3,
     "480p": 0,
     "other": 0
   },
   "by_category": {
     "News": 4,
-    "General": 4
+    "General": 5
   },
   "by_country": {
-    "US": 8
+    "US": 9
   },
   "individual_channels": [
     {
@@ -38,19 +38,24 @@
       "quality": "1080p"
     },
     {
-      "name": "Silverbird N24",
-      "file": "channels/silverbird_n24.m3u8",
-      "quality": "720p"
+      "name": "NTA Live",
+      "file": "channels/nta_live.m3u8",
+      "quality": "1080p"
     },
     {
-      "name": "Voice of the People 903 FM",
-      "file": "channels/voice_of_the_people_903_fm.m3u8",
+      "name": "Silverbird N24",
+      "file": "channels/silverbird_n24.m3u8",
       "quality": "720p"
     },
     {
       "name": "JoyNews",
       "file": "channels/joynews.m3u8",
       "quality": "1080p"
+    },
+    {
+      "name": "TV3 Ghana",
+      "file": "channels/tv3_ghana.m3u8",
+      "quality": "720p"
     },
     {
       "name": "Adom TV",
